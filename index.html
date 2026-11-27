@@ -190,6 +190,11 @@ dialog::backdrop{background:rgba(10,14,28,.65)}
     <select class="btn" id="lang" aria-label="Langue des cartes">
       <option value="fr">Français</option><option value="en">English</option>
     </select>
+    <select class="btn" id="priceMode" aria-label="Prix utilisé">
+      <option value="avg30">Prix : moyenne 30 j</option>
+      <option value="trend">Prix : tendance</option>
+      <option value="low">Prix : le plus bas</option>
+    </select>
     <button class="btn" id="exportBtn">Exporter</button>
     <button class="btn" id="importBtn">Importer</button>
     <input type="file" id="importFile" accept="application/json" hidden>
@@ -224,7 +229,9 @@ const DAY = 86400000;
 let lang = LS.get("pk.lang", "fr");
 let owned = LS.get("pk.owned", {});          // { cardId: true }
 let prices = LS.get("pk.prices", {});        // { cardId: {t, cm:{...}, tp:{...}} }
-let ownedMeta = LS.get("pk.ownedMeta", {});  // { cardId: {name, set} } pour l'export lisible
+let ownedMeta = LS.get("pk.ownedMeta", {});
+let custom = LS.get("pk.custom", {});         // { cardId: prix perso en € }
+let priceMode = LS.get("pk.priceMode", "avg30");  // { cardId: {name, set} } pour l'export lisible
 let seriesData = [];                          // [{id,name,logo,sets:[...]}]
 let current = null;                           // extension affichée
 let filter = "all", query = "", sortBy = "num";
@@ -274,12 +281,18 @@ function compactPricing(p){
   return out;
 }
 // Prix de référence : tendance Cardmarket (€), sinon moyenne, sinon variante holo
+// Prix de référence selon le réglage choisi (le prix perso passe toujours en premier)
 function refPrice(id){
+  if(typeof custom[id] === "number") return custom[id];
   const p = prices[id]; if(!p || !p.cm) return null;
   const c = p.cm;
-  const v = [c.trend, c.avg, c.trendH, c.avgH, c.low].find(x => typeof x === "number" && x > 0);
+  const order = priceMode === "low" ? [c.low, c.lowH, c.avg30, c.avg, c.trend]
+    : priceMode === "trend" ? [c.trend, c.avg, c.avg30, c.trendH, c.avgH]
+    : [c.avg30, c.avg7, c.avg, c.trend, c.avg30H, c.trendH];
+  const v = order.find(x => typeof x === "number" && x > 0);
   return v ?? null;
 }
+const MODE_LABEL = {avg30:"Moyenne 30 jours Cardmarket", trend:"Tendance Cardmarket", low:"Prix le plus bas Cardmarket"};
 const PV = 2; // version du cache de prix
 function priceFresh(id){ const c = prices[id]; return c && c.v === PV && Date.now() - c.t < DAY; }
 async function priceFromCard(card, id){
@@ -477,7 +490,10 @@ function visibleCards(){
 
 function priceHTML(id){
   const p = refPrice(id);
-  if(p != null) return `<span class="price${p >= 20 ? " hot" : ""}" title="Tendance Cardmarket">${fmtEur(p)}</span>`;
+  if(p != null){
+    const mine = typeof custom[id] === "number";
+    return `<span class="price${p >= 20 ? " hot" : ""}" title="${mine ? "Mon prix" : MODE_LABEL[priceMode]}">${fmtEur(p)}${mine ? " ✎" : ""}</span>`;
+  }
   if(prices[id]) return `<span class="price none">pas de prix</span>`;
   return `<span class="price none"><button type="button" data-price="${esc(id)}">voir le prix</button></span>`;
 }
@@ -601,7 +617,7 @@ async function openCard(id){
   const dlg = $("#dlg");
   const c = current.cards.find(x => x.id === id);
   dlg.innerHTML = `<div class="loader"><span class="spin"></span>Chargement de la carte…</div>`;
-  dlg.showModal();
+  if(!dlg.open) dlg.showModal();
   let card = null;
   try{
     card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
@@ -623,20 +639,36 @@ async function openCard(id){
         <h2>${esc(card.name || c.name)}</h2>
         <div class="sub">${esc(current.name)} · n° ${esc(c.localId)}${card.rarity ? " · " + esc(card.rarity) : ""}${card.illustrator ? " · illustration " + esc(card.illustrator) : ""}</div>
         <label class="own" style="font-size:14px;padding:6px 14px 6px 10px"><input type="checkbox" id="dlgOwn"${owned[id] ? " checked" : ""}>Je possède cette carte</label>
-        <h3>Cardmarket (Europe)</h3>
+        <h3>Mon prix</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 6px">
+          <input type="number" id="myPrice" min="0" step="0.01" inputmode="decimal" placeholder="ex. 4,50" value="${typeof custom[id] === "number" ? custom[id] : ""}"
+            style="width:110px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2)" aria-label="Mon prix en euros"> €
+          <button type="button" class="btn primary" id="myPriceSave">Utiliser ce prix</button>
+          ${typeof custom[id] === "number" ? `<button type="button" class="btn" id="myPriceClear">Revenir au prix du marché</button>` : ""}
+        </div>
+        <div class="updated">Prix compté pour cette carte : <b>${esc(fmtEur(refPrice(id)))}</b> (${typeof custom[id] === "number" ? "mon prix" : esc(MODE_LABEL[priceMode].toLowerCase())})</div>
+        <h3>Cardmarket (Europe, toutes langues confondues)</h3>
         ${cm ? `<table class="ptable">
           ${row("Tendance", cm.trend)}${row("Prix moyen", cm.avg)}${row("Prix le plus bas", cm.low)}${row("Moyenne 7 jours", cm.avg7)}${row("Moyenne 30 jours", cm.avg30)}
           ${row("Tendance (holo / reverse)", cm.trendH)}${row("Prix bas (holo / reverse)", cm.lowH)}
-        </table><div class="updated">Mis à jour le ${esc(dateF(cm.u))}</div>` : `<p class="sub">Aucun prix Cardmarket disponible pour cette carte.</p>`}
+        </table>${cm.u ? `<div class="updated">Mis à jour le ${esc(dateF(cm.u))}</div>` : ""}` : `<p class="sub">Aucun prix Cardmarket disponible pour cette carte.</p>`}
         <h3>TCGplayer (États-Unis)</h3>
         ${tp && Object.keys(tp.v).length ? `<table class="ptable">${Object.entries(tp.v).map(([k, v]) =>
-          row("Marché · " + esc(tpNames[k] || k), v.m ?? v.mid, fmtUsd)).join("")}</table><div class="updated">Mis à jour le ${esc(dateF(tp.u))}</div>`
+          row("Marché · " + esc(tpNames[k] || k), v.m ?? v.mid, fmtUsd)).join("")}</table>${tp.u ? `<div class="updated">Mis à jour le ${esc(dateF(tp.u))}</div>` : ""}`
           : `<p class="sub">Aucun prix TCGplayer disponible pour cette carte.</p>`}
         <div class="links"><a href="${cmUrl}" target="_blank" rel="noopener">Voir sur Cardmarket ↗</a><a href="${tpUrl}" target="_blank" rel="noopener">Voir sur TCGplayer ↗</a></div>
       </div>
     </div>`;
   dlg.querySelector(".close").onclick = () => dlg.close();
   dlg.querySelector("#dlgOwn").onchange = e => setOwned(id, e.target.checked);
+  const afterCustom = () => { LS.set("pk.custom", custom); refreshCardPrice(id); refreshKpis(); updateGlobal(); openCard(id); };
+  dlg.querySelector("#myPriceSave").onclick = () => {
+    const v = parseFloat(String(dlg.querySelector("#myPrice").value).replace(",", "."));
+    if(isNaN(v) || v < 0){ toast("Entre un prix en euros, par exemple 4.50"); return; }
+    custom[id] = Math.round(v * 100) / 100; afterCustom(); toast("Prix enregistré");
+  };
+  const clr = dlg.querySelector("#myPriceClear");
+  if(clr) clr.onclick = () => { delete custom[id]; afterCustom(); };
 }
 $("#dlg").addEventListener("click", e => { if(e.target === e.currentTarget) e.currentTarget.close(); });
 
@@ -668,7 +700,7 @@ async function calcGlobal(){
 
 /* ================= Sauvegarde ================= */
 $("#exportBtn").addEventListener("click", () => {
-  const data = {app:"classeur-pokemon", version:1, date:new Date().toISOString(), owned:Object.keys(owned), details:ownedMeta};
+  const data = {app:"classeur-pokemon", version:1, date:new Date().toISOString(), owned:Object.keys(owned), details:ownedMeta, customPrices:custom};
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -685,6 +717,7 @@ $("#importFile").addEventListener("change", async e => {
     if(!Array.isArray(d.owned)) throw new Error("format");
     d.owned.forEach(id => owned[id] = true);
     Object.assign(ownedMeta, d.details || {});
+    if(d.customPrices){ Object.assign(custom, d.customPrices); LS.set("pk.custom", custom); }
     LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
     updateGlobal(); renderSide(); if(current) renderSet();
     toast(`${d.owned.length} cartes importées`);
@@ -702,6 +735,12 @@ $("#lang").addEventListener("change", e => {
 });
 
 $("#gCalc").addEventListener("click", calcGlobal);
+$("#priceMode").value = priceMode;
+$("#priceMode").addEventListener("change", e => {
+  priceMode = e.target.value; LS.set("pk.priceMode", priceMode);
+  updateGlobal(); if(current) renderSet();
+  toast("Prix utilisé : " + MODE_LABEL[priceMode].toLowerCase());
+});
 updateGlobal();
 loadSeries();
 </script>
