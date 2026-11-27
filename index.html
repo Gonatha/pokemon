@@ -112,10 +112,18 @@ main{padding:20px max(16px,env(safe-area-inset-right)) 60px max(16px,env(safe-ar
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:8px;
   transition:transform .12s,box-shadow .12s}
 .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-.pic{position:relative;aspect-ratio:63/88;border-radius:7px;background:var(--slot);overflow:hidden;border:0;padding:0;width:100%;max-width:100%}
+.pic{position:relative;aspect-ratio:63/88;border-radius:7px;background:var(--slot);overflow:hidden;border:0;padding:0;width:100%;max-width:100%;
+  transform:perspective(680px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transform-style:preserve-3d;
+  transition:transform .35s cubic-bezier(.2,.75,.25,1),box-shadow .35s}
+.pic.tilting{transition:transform .07s linear;box-shadow:0 10px 24px rgba(24,32,58,.28);will-change:transform;z-index:1}
 .pic img{width:100%;height:100%;object-fit:cover;display:block;transition:filter .2s,opacity .2s}
 .card:not(.owned) .pic img{filter:grayscale(1);opacity:.45}
 .card:not(.owned):hover .pic img{opacity:.8;filter:grayscale(.3)}
+/* Reflet + voile holographique révélés au survol (pointeur fin uniquement) */
+.pic .glare,.pic .sheen{position:absolute;inset:0;pointer-events:none;border-radius:inherit;opacity:0;transition:opacity .35s}
+.pic .glare{background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.55),rgba(255,255,255,0) 55%);mix-blend-mode:soft-light;opacity:var(--holo,0)}
+.pic .sheen{background:repeating-linear-gradient(112deg,rgba(255,0,132,.5),rgba(255,176,0,.5) 14%,rgba(68,255,110,.5) 28%,rgba(0,198,255,.5) 42%,rgba(150,60,255,.5) 56%,rgba(255,0,132,.5) 70%);
+  background-size:280% 280%;background-position:var(--mx,50%) var(--my,50%);mix-blend-mode:color-dodge;opacity:calc(var(--holo,0)*.38)}
 .pic .noimg{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center;padding:10px}
 .pic:has(img) .noimg{display:none}
 .badge-owned{position:absolute;top:6px;right:6px;background:var(--ok);color:#fff;border-radius:50%;width:24px;height:24px;
@@ -172,6 +180,27 @@ dialog::backdrop{background:rgba(10,14,28,.65)}
 .links a{color:var(--accent);font-weight:600}
 .updated{font-size:11px;color:var(--muted)}
 
+/* ---------- Grande carte interactive (fiche) ---------- */
+dialog[open]{animation:dlgpop .28s cubic-bezier(.2,.75,.25,1)}
+@keyframes dlgpop{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+.holo{perspective:1100px;width:100%}
+.holo-card{position:relative;border-radius:12px;overflow:hidden;
+  transform:rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--sc,1));transform-style:preserve-3d;
+  transition:transform .4s cubic-bezier(.2,.75,.25,1),box-shadow .4s;box-shadow:0 16px 42px rgba(0,0,0,.4)}
+.holo-card.tilting{transition:transform .07s linear;box-shadow:0 26px 60px rgba(0,0,0,.5);will-change:transform}
+.holo-card img{display:block;width:100%;border-radius:inherit}
+.holo-card .glare,.holo-card .sheen{position:absolute;inset:0;pointer-events:none;border-radius:inherit;transition:opacity .4s}
+.holo-card .glare{background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.7),rgba(255,255,255,0) 55%);mix-blend-mode:soft-light;opacity:var(--holo,0)}
+.holo-card .sheen{background:repeating-linear-gradient(112deg,rgba(255,0,132,.55),rgba(255,176,0,.55) 13%,rgba(68,255,110,.55) 26%,rgba(0,198,255,.55) 39%,rgba(150,60,255,.55) 52%,rgba(255,0,132,.55) 65%);
+  background-size:280% 280%;background-position:var(--mx,50%) var(--my,50%);mix-blend-mode:color-dodge;opacity:calc(var(--holo,0)*.45)}
+.holo-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:10px}
+/* Sur écran tactile : scintillement doux automatique, pas d'inclinaison */
+@media (hover:none){
+  .holo-card .sheen{opacity:.28;animation:holoshift 7s ease-in-out infinite}
+  .holo-hint{display:none}
+}
+@keyframes holoshift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+
 .toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);
   padding:9px 16px;border-radius:9px;font-weight:500;z-index:50;box-shadow:var(--shadow)}
 
@@ -187,6 +216,7 @@ dialog::backdrop{background:rgba(10,14,28,.65)}
   .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
   .dlg{grid-template-columns:minmax(0,1fr)}
   .dlg img{max-width:300px;margin:0 auto}
+  .dlg .holo{max-width:300px;margin:0 auto}
   .kpis{margin-left:0}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -548,7 +578,7 @@ function cardHTML(c){
   const img = c.image ? `<img src="${esc(c.image)}/low.webp" alt="${esc(c.name)}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}else{this.remove()}">` : "";
   return `<article class="card${owned[c.id] ? " owned" : ""}" data-id="${esc(c.id)}">
     <button type="button" class="pic" data-open="${esc(c.id)}" aria-label="Voir ${esc(c.name)} en grand">
-      <span class="noimg">${esc(c.name)}<br>image indisponible</span>${img}<span class="badge-owned">✓</span>${tagsHTML(c.id)}
+      <span class="noimg">${esc(c.name)}<br>image indisponible</span>${img}<span class="glare"></span><span class="sheen"></span><span class="badge-owned">✓</span>${tagsHTML(c.id)}
     </button>
     <div class="cinfo"><span class="cname" title="${esc(c.name)}">${esc(c.name)}</span><span class="cnum">${esc(c.localId)}/${esc(total)}</span></div>
     <div class="crow">
@@ -679,7 +709,7 @@ function renderTrades(){
       const m = ownedMeta[id] || {}, cd = items[id]?.c;
       const img = m.img ? `<img src="${esc(m.img)}/low.webp" alt="${esc(m.name || id)}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}else{this.remove()}">` : "";
       html += `<article class="card owned tradecard" data-id="${esc(id)}">
-        <button type="button" class="pic" data-open="${esc(id)}" aria-label="Voir ${esc(m.name || id)}"><span class="noimg">${esc(m.name || id)}</span>${img}${tagsHTML(id)}</button>
+        <button type="button" class="pic" data-open="${esc(id)}" aria-label="Voir ${esc(m.name || id)}"><span class="noimg">${esc(m.name || id)}</span>${img}<span class="glare"></span><span class="sheen"></span>${tagsHTML(id)}</button>
         <div class="cinfo"><span class="cname" title="${esc(m.name || id)}">${esc(m.name || id)}</span><span class="cnum">n° ${esc(m.n || "")}</span></div>
         <div class="crow"><span class="pslot">${priceHTML(id)}</span><span class="cond">${esc(cd ? CONDS_SHORT[cd] : "état ?")}</span></div>
       </article>`;
@@ -742,7 +772,7 @@ async function openCard(id){
   const dateF = d => d ? new Date(d).toLocaleDateString("fr-FR") : "";
   dlg.innerHTML = `<button type="button" class="close" aria-label="Fermer">×</button>
     <div class="dlg">
-      <div>${img ? `<img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}">` : `<div class="empty">Image indisponible</div>`}</div>
+      <div>${img ? `<div class="holo"><div class="holo-card"><img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}"><span class="glare"></span><span class="sheen"></span></div></div>${FINE && !REDUCED ? `<div class="holo-hint">Survole la carte pour la faire scintiller ✨</div>` : ""}` : `<div class="empty">Image indisponible</div>`}</div>
       <div style="min-width:0">
         <h2>${esc(card.name || c.name)}</h2>
         <div class="sub">${esc(setName)} · n° ${esc(c.localId)}${card.rarity ? " · " + esc(card.rarity) : ""}${card.illustrator ? " · illustration " + esc(card.illustrator) : ""}</div>
@@ -776,6 +806,12 @@ async function openCard(id){
       </div>
     </div>`;
   dlg.querySelector(".close").onclick = () => dlg.close();
+  const holoCard = dlg.querySelector(".holo-card");
+  if(holoCard && FINE && !REDUCED){
+    const zone = holoCard.parentElement; let rafH = 0, hx = 0, hy = 0;
+    zone.addEventListener("pointermove", e => { hx = e.clientX; hy = e.clientY; if(!rafH) rafH = requestAnimationFrame(() => { rafH = 0; tiltMove(holoCard, hx, hy, 14); }); });
+    zone.addEventListener("pointerleave", () => tiltReset(holoCard));
+  }
   const syncMine = () => {
     const box = dlg.querySelector("#mine"); if(!box) return;
     box.hidden = !owned[id];
@@ -880,6 +916,41 @@ $("#priceMode").addEventListener("change", e => {
   updateGlobal(); if(current) renderSet(); else if(view === "trades") renderTrades();
   toast("Prix utilisé : " + MODE_LABEL[priceMode].toLowerCase());
 });
+
+/* ================= Effet 3D & holographie des cartes ================= */
+const FINE = matchMedia("(hover:hover) and (pointer:fine)").matches;
+const REDUCED = matchMedia("(prefers-reduced-motion:reduce)").matches;
+function tiltMove(el, clientX, clientY, max){
+  const r = el.getBoundingClientRect();
+  if(!r.width) return;
+  const px = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+  const py = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+  el.style.setProperty("--rx", ((0.5 - py) * 2 * max).toFixed(2) + "deg");
+  el.style.setProperty("--ry", ((px - 0.5) * 2 * max).toFixed(2) + "deg");
+  el.style.setProperty("--mx", (px * 100).toFixed(1) + "%");
+  el.style.setProperty("--my", (py * 100).toFixed(1) + "%");
+  el.style.setProperty("--sc", "1.04");
+  el.style.setProperty("--holo", "1");
+  el.classList.add("tilting");
+}
+function tiltReset(el){
+  if(!el) return;
+  el.style.setProperty("--rx", "0deg"); el.style.setProperty("--ry", "0deg");
+  el.style.setProperty("--sc", "1"); el.style.setProperty("--holo", "0");
+  el.classList.remove("tilting");
+}
+if(FINE && !REDUCED){
+  const main = $("#main"); let hovered = null, rafG = 0, gx = 0, gy = 0;
+  main.addEventListener("pointermove", e => {
+    const pic = e.target.closest(".pic");
+    if(pic !== hovered){ tiltReset(hovered); hovered = pic; }
+    if(!pic) return;
+    gx = e.clientX; gy = e.clientY;
+    if(!rafG) rafG = requestAnimationFrame(() => { rafG = 0; if(hovered) tiltMove(hovered, gx, gy, 9); });
+  });
+  main.addEventListener("pointerleave", () => { tiltReset(hovered); hovered = null; });
+}
+
 updateGlobal();
 loadSeries();
 </script>
