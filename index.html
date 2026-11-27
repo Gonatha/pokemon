@@ -49,6 +49,7 @@ header.top{position:sticky;top:0;z-index:20;background:var(--surface);border-bot
 .ball::after{content:"";position:absolute;inset:50% auto auto 50%;width:9px;height:9px;transform:translate(-50%,-50%);
   border-radius:50%;background:var(--surface);border:2.5px solid var(--fg)}
 .gstats{display:flex;gap:18px;margin-left:auto;flex-wrap:wrap}
+.gstats .btn{align-self:center}
 .gstat{display:flex;flex-direction:column;line-height:1.15}
 .gstat b{font:700 16px var(--f-mono);font-variant-numeric:tabular-nums}
 .gstat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
@@ -182,7 +183,8 @@ dialog::backdrop{background:rgba(10,14,28,.65)}
   <div class="brand"><span class="ball" aria-hidden="true"></span>Mon Classeur Pokémon</div>
   <div class="gstats">
     <div class="gstat"><b id="gOwned">0</b><span>cartes possédées</span></div>
-    <div class="gstat"><b id="gValue">—</b><span>valeur estimée</span></div>
+    <div class="gstat"><b id="gValue">—</b><span id="gCover">valeur estimée</span></div>
+    <button class="btn" id="gCalc" hidden>Calculer la valeur</button>
   </div>
   <div class="tools">
     <select class="btn" id="lang" aria-label="Langue des cartes">
@@ -278,13 +280,41 @@ function refPrice(id){
   const v = [c.trend, c.avg, c.trendH, c.avgH, c.low].find(x => typeof x === "number" && x > 0);
   return v ?? null;
 }
-async function fetchPrice(id, force){
-  const c = prices[id];
-  if(!force && c && Date.now() - c.t < DAY) return c;
-  const card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
-  prices[id] = {t:Date.now(), ...(compactPricing(card.pricing) || {}), r:card.rarity || null};
+const PV = 2; // version du cache de prix
+function priceFresh(id){ const c = prices[id]; return c && c.v === PV && Date.now() - c.t < DAY; }
+async function priceFromCard(card, id){
+  let p = compactPricing(card.pricing) || {};
+  // Les vieilles cartes n'ont parfois un prix que dans la version anglaise de la base
+  if(!p.cm && lang !== "en"){
+    try{
+      const en = await getJSON(`/en/cards/${encodeURIComponent(id)}`);
+      const pe = compactPricing(en.pricing) || {};
+      if(pe.cm) p.cm = pe.cm;
+      if(!p.tp && pe.tp) p.tp = pe.tp;
+    }catch(e){}
+  }
+  prices[id] = {v:PV, t:Date.now(), ...p, r:card.rarity || null};
   savePricesSoon();
-  return {card, price:prices[id]};
+  return prices[id];
+}
+async function fetchPrice(id, force){
+  if(!force && priceFresh(id)) return prices[id];
+  const card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
+  return priceFromCard(card, id);
+}
+// File d'attente : charge les prix de plusieurs cartes, 6 à la fois
+async function priceQueue(ids, force, onEach){
+  let i = 0, done = 0, fail = 0;
+  const worker = async () => {
+    while(i < ids.length){
+      const id = ids[i++];
+      try{ await fetchPrice(id, force); }catch(e){ fail++; }
+      done++; onEach && onEach(id, done);
+    }
+  };
+  await Promise.all(Array.from({length:6}, worker));
+  LS.set("pk.prices", prices);
+  return {done, fail};
 }
 let _ps; function savePricesSoon(){ clearTimeout(_ps); _ps = setTimeout(() => LS.set("pk.prices", prices), 400); }
 
@@ -375,6 +405,7 @@ async function openSet(id){
     renderSet();
     renderSide();
     window.scrollTo({top:0});
+    autoPriceOwned(set);
   }catch(e){
     main.innerHTML = `<div class="error">Impossible de charger cette extension (${esc(e.message)}).</div>`;
   }
@@ -539,25 +570,30 @@ async function loadAllPrices(btn){
   const set = current, ids = set.cards.map(c => c.id);
   const force = btn.textContent.startsWith("Actualiser");
   btn.disabled = true;
-  let done = 0, fail = 0, i = 0;
-  const worker = async () => {
-    while(i < ids.length && current === set){
-      const id = ids[i++];
-      try{ await fetchPrice(id, force); }catch(e){ fail++; }
-      done++;
-      refreshCardPrice(id);
-      if(btn.isConnected) btn.textContent = `Prix… ${done}/${ids.length}`;
-      if(done % 10 === 0) refreshKpis();
-    }
-  };
-  await Promise.all(Array.from({length:6}, worker));
-  LS.set("pk.prices", prices);
+  const {fail} = await priceQueue(ids, force, (id, done) => {
+    if(current !== set) return;
+    refreshCardPrice(id);
+    if(btn.isConnected) btn.textContent = `Prix… ${done}/${ids.length}`;
+    if(done % 10 === 0){ refreshKpis(); updateGlobal(); }
+  });
   if(current === set){
     refreshKpis(); updateGlobal();
     if(sortBy === "price") renderGrid();
     if(btn.isConnected){ btn.disabled = false; btn.textContent = "Actualiser les prix"; }
     toast(fail ? `${ids.length - fail} prix chargés, ${fail} indisponibles` : "Prix à jour");
   }
+}
+
+async function autoPriceOwned(set){
+  const ids = set.cards.map(c => c.id).filter(id => owned[id] && !priceFresh(id));
+  if(!ids.length) return;
+  await priceQueue(ids, false, (id, done) => {
+    if(current !== set) return;
+    refreshCardPrice(id);
+    if(done % 5 === 0 || done === ids.length){ refreshKpis(); updateGlobal(); }
+  });
+  if(current === set){ refreshKpis(); if(sortBy === "price") renderGrid(); }
+  updateGlobal();
 }
 
 /* ================= Fiche détaillée ================= */
@@ -569,8 +605,8 @@ async function openCard(id){
   let card = null;
   try{
     card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
-    prices[id] = {t:Date.now(), ...(compactPricing(card.pricing) || {}), r:card.rarity || null};
-    savePricesSoon(); refreshCardPrice(id); refreshKpis(); updateGlobal();
+    await priceFromCard(card, id);
+    refreshCardPrice(id); refreshKpis(); updateGlobal();
   }catch(e){ card = {...c}; }
   const p = prices[id] || {};
   const img = card.image || c.image;
@@ -611,7 +647,23 @@ function updateGlobal(){
   let v = 0, priced = 0;
   ids.forEach(id => { const p = refPrice(id); if(p){ v += p; priced++; } });
   $("#gValue").textContent = priced ? fmtEur(v) : "—";
-  $("#gValue").title = `${priced} cartes possédées avec un prix connu sur ${ids.length}`;
+  const missing = ids.filter(id => !priceFresh(id)).length;
+  $("#gCover").textContent = missing ? `valeur · ${ids.length - missing}/${ids.length} prix chargés` : "valeur estimée";
+  if(!globalBusy){ $("#gCalc").hidden = !missing; $("#gCalc").textContent = "Calculer la valeur"; }
+}
+let globalBusy = false;
+async function calcGlobal(){
+  const ids = Object.keys(owned).filter(id => !priceFresh(id));
+  if(!ids.length || globalBusy) return;
+  globalBusy = true; const b = $("#gCalc"); b.disabled = true;
+  const {fail} = await priceQueue(ids, false, (id, done) => {
+    b.textContent = `Prix… ${done}/${ids.length}`;
+    refreshCardPrice(id);
+    if(done % 10 === 0){ updateGlobal(); refreshKpis(); }
+  });
+  globalBusy = false; b.disabled = false;
+  updateGlobal(); refreshKpis();
+  toast(fail ? `Valeur calculée (${fail} prix indisponibles)` : "Valeur de la collection à jour");
 }
 
 /* ================= Sauvegarde ================= */
@@ -649,6 +701,7 @@ $("#lang").addEventListener("change", e => {
   loadSeries();
 });
 
+$("#gCalc").addEventListener("click", calcGlobal);
 updateGlobal();
 loadSeries();
 </script>
