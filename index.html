@@ -121,6 +121,20 @@ main{padding:20px max(16px,env(safe-area-inset-right)) 60px max(16px,env(safe-ar
 .badge-owned{position:absolute;top:6px;right:6px;background:var(--ok);color:#fff;border-radius:50%;width:24px;height:24px;
   display:grid;place-items:center;font-weight:700;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .card:not(.owned) .badge-owned{display:none}
+.tags{position:absolute;left:6px;bottom:6px;display:flex;gap:4px;flex-wrap:wrap}
+.tag{background:var(--fg);color:var(--bg);border-radius:6px;padding:1px 6px;font:700 11px/1.5 var(--f-mono)}
+.tag.trade{background:var(--gold);color:#1a1300}
+.mine{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0;display:grid;gap:10px}
+.mine-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.mine-row>span{font-weight:600}
+.mine-row small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+.stepper button{border:0;background:none;width:34px;height:32px;font-size:18px;font-weight:600}
+.stepper button:disabled{opacity:.35;cursor:default}
+.stepper output{min-width:30px;text-align:center;font:700 14px var(--f-mono)}
+.mine select{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface)}
+.tradegroup h2{font:800 18px var(--f-display);margin:22px 0 10px}
+.tradecard .cond{font-size:11px;color:var(--muted)}
 .cinfo{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
 .cname{font-weight:600;font-size:13px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .cnum{font:500 11px var(--f-mono);color:var(--muted);white-space:nowrap}
@@ -162,6 +176,7 @@ dialog::backdrop{background:rgba(10,14,28,.65)}
   padding:9px 16px;border-radius:9px;font-weight:500;z-index:50;box-shadow:var(--shadow)}
 
 @media (max-width:860px){
+  header.top{position:static}
   .menu-btn{display:inline-block}
   .app{grid-template-columns:minmax(0,1fr)}
   aside.side{position:fixed;inset:0 auto 0 0;width:min(320px,88vw);height:auto;z-index:40;transform:translateX(-102%);
@@ -185,6 +200,7 @@ dialog::backdrop{background:rgba(10,14,28,.65)}
     <div class="gstat"><b id="gOwned">0</b><span>cartes possédées</span></div>
     <div class="gstat"><b id="gValue">—</b><span id="gCover">valeur estimée</span></div>
     <button class="btn" id="gCalc" hidden>Calculer la valeur</button>
+    <button class="btn" id="tradeBtn">⇄ À échanger <b id="gTrade">0</b></button>
   </div>
   <div class="tools">
     <select class="btn" id="lang" aria-label="Langue des cartes">
@@ -230,7 +246,20 @@ let lang = LS.get("pk.lang", "fr");
 let owned = LS.get("pk.owned", {});          // { cardId: true }
 let prices = LS.get("pk.prices", {});        // { cardId: {t, cm:{...}, tp:{...}} }
 let ownedMeta = LS.get("pk.ownedMeta", {});
-let custom = LS.get("pk.custom", {});         // { cardId: prix perso en € }
+let custom = LS.get("pk.custom", {});
+let items = LS.get("pk.items", {});           // { cardId: {q: quantité, c: état, t: nb à échanger} }
+let view = "set";                             // "set" ou "trades"
+const CONDS = [["","Non précisé"],["MT","Mint · parfait"],["NM","Near Mint · quasi neuf"],["EX","Excellent"],["GD","Good · bon"],["LP","Light Played · peu jouée"],["PL","Played · jouée"],["PO","Poor · abîmée"]];
+const CONDS_SHORT = {MT:"Mint",NM:"Near Mint",EX:"Excellent",GD:"Good",LP:"Light Played",PL:"Played",PO:"Poor"};
+const qty = id => owned[id] ? Math.max(1, items[id]?.q || 1) : 0;
+const tradeN = id => owned[id] ? Math.min(items[id]?.t || 0, qty(id)) : 0;
+function setItem(id, patch){
+  const it = {q:1, c:"", t:0, ...(items[id] || {}), ...patch};
+  it.q = Math.max(1, Math.min(999, it.q|0)); it.t = Math.max(0, Math.min(it.q, it.t|0));
+  items[id] = it; LS.set("pk.items", items);
+}
+function metaFrom(c, set){ return {name:c.name, set:set.name, setId:set.id, n:c.localId, img:c.image || null}; }
+function idSet(id){ const i = id.lastIndexOf("-"); return i > 0 ? id.slice(0, i) : id; }         // { cardId: prix perso en € }
 let priceMode = LS.get("pk.priceMode", "avg30");  // { cardId: {name, set} } pour l'export lisible
 let seriesData = [];                          // [{id,name,logo,sets:[...]}]
 let current = null;                           // extension affichée
@@ -340,8 +369,7 @@ async function loadSeries(){
       getJSON(`/${lang}/series/${encodeURIComponent(s.id)}`, `pk.serie.${lang}.${s.id}`, 3*DAY).catch(() => null)));
     seriesData = details.filter(Boolean).filter(s => s.sets && s.sets.length).reverse();
     renderSide();
-    const h = decodeURIComponent(location.hash.slice(1));
-    if(h.startsWith("set-")) openSet(h.slice(4));
+    route();
   }catch(e){
     box.innerHTML = `<div class="error">Impossible de charger les collections (${esc(e.message)}).<br>Vérifie ta connexion internet puis recharge la page.</div>`;
   }
@@ -390,10 +418,13 @@ $("#series").addEventListener("click", e => {
   if(sl){ location.hash = "set-" + sl.dataset.set; document.body.classList.remove("drawer"); }
 });
 $("#setSearch").addEventListener("input", renderSide);
-window.addEventListener("hashchange", () => {
+function route(){
   const h = decodeURIComponent(location.hash.slice(1));
-  if(h.startsWith("set-")) openSet(h.slice(4));
-});
+  if(h === "echanges") renderTrades();
+  else if(h.startsWith("set-")) openSet(h.slice(4));
+}
+window.addEventListener("hashchange", route);
+$("#tradeBtn").addEventListener("click", () => { if(location.hash === "#echanges") renderTrades(); else location.hash = "echanges"; });
 $("#menuBtn").addEventListener("click", () => document.body.classList.toggle("drawer"));
 document.addEventListener("click", e => {
   if(document.body.classList.contains("drawer") && !e.target.closest("#side") && !e.target.closest("#menuBtn")) document.body.classList.remove("drawer");
@@ -414,7 +445,10 @@ async function openSet(id){
       }catch(e){}
     }
     LS.set(`pk.setids.${set.id}`, set.cards.map(c => c.id));
-    current = set;
+    current = set; view = "set";
+    let metaChanged = false;
+    set.cards.forEach(c => { if(owned[c.id] && (!ownedMeta[c.id] || !ownedMeta[c.id].setId)){ ownedMeta[c.id] = metaFrom(c, set); metaChanged = true; } });
+    if(metaChanged) LS.set("pk.ownedMeta", ownedMeta);
     renderSet();
     renderSide();
     window.scrollTo({top:0});
@@ -430,7 +464,7 @@ function setStats(){
   for(const c of cards){
     const p = refPrice(c.id);
     if(prices[c.id]) priced++;
-    if(owned[c.id]){ n++; if(p) vOwned += p; } else if(p) vMissing += p;
+    if(owned[c.id]){ n++; if(p) vOwned += p * qty(c.id); } else if(p) vMissing += p;
   }
   return {n, total:cards.length, vOwned, vMissing, priced};
 }
@@ -458,6 +492,7 @@ function renderSet(){
         <button type="button" data-f="all" aria-pressed="${filter==="all"}">Toutes</button>
         <button type="button" data-f="owned" aria-pressed="${filter==="owned"}">Je l'ai</button>
         <button type="button" data-f="missing" aria-pressed="${filter==="missing"}">Il me manque</button>
+        <button type="button" data-f="trade" aria-pressed="${filter==="trade"}">À échanger</button>
       </div>
       <input type="search" id="q" placeholder="Nom ou numéro…" value="${esc(query)}" aria-label="Chercher une carte">
       <select class="btn" id="sort" aria-label="Trier">
@@ -478,6 +513,7 @@ function visibleCards(){
   let list = current.cards.filter(c => {
     if(filter === "owned" && !owned[c.id]) return false;
     if(filter === "missing" && owned[c.id]) return false;
+    if(filter === "trade" && !tradeN(c.id)) return false;
     if(q && !(c.name.toLowerCase().includes(q) || String(c.localId).toLowerCase() === q || String(c.localId).toLowerCase().includes(q))) return false;
     return true;
   });
@@ -498,12 +534,21 @@ function priceHTML(id){
   return `<span class="price none"><button type="button" data-price="${esc(id)}">voir le prix</button></span>`;
 }
 
+function tagsHTML(id){
+  if(!owned[id]) return "";
+  const q = qty(id), t = tradeN(id), cd = items[id]?.c;
+  const tags = [];
+  if(q > 1) tags.push(`<span class="tag" title="${q} exemplaires">×${q}</span>`);
+  if(cd) tags.push(`<span class="tag" title="${esc(CONDS_SHORT[cd])}">${esc(cd)}</span>`);
+  if(t) tags.push(`<span class="tag trade" title="${t} à échanger">⇄ ${t}</span>`);
+  return tags.length ? `<span class="tags">${tags.join("")}</span>` : "";
+}
 function cardHTML(c){
   const total = current.cardCount?.official || current.cards.length;
   const img = c.image ? `<img src="${esc(c.image)}/low.webp" alt="${esc(c.name)}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}else{this.remove()}">` : "";
   return `<article class="card${owned[c.id] ? " owned" : ""}" data-id="${esc(c.id)}">
     <button type="button" class="pic" data-open="${esc(c.id)}" aria-label="Voir ${esc(c.name)} en grand">
-      <span class="noimg">${esc(c.name)}<br>image indisponible</span>${img}<span class="badge-owned">✓</span>
+      <span class="noimg">${esc(c.name)}<br>image indisponible</span>${img}<span class="badge-owned">✓</span>${tagsHTML(c.id)}
     </button>
     <div class="cinfo"><span class="cname" title="${esc(c.name)}">${esc(c.name)}</span><span class="cnum">${esc(c.localId)}/${esc(total)}</span></div>
     <div class="crow">
@@ -517,7 +562,7 @@ function renderGrid(){
   const list = visibleCards();
   const g = $("#grid");
   g.innerHTML = list.length ? list.map(cardHTML).join("") :
-    `<div class="empty" style="grid-column:1/-1">${filter === "owned" ? "Tu n'as encore coché aucune carte de cette extension." : filter === "missing" ? "Bravo, l'extension est complète !" : "Aucune carte ne correspond."}</div>`;
+    `<div class="empty" style="grid-column:1/-1">${filter === "owned" ? "Tu n'as encore coché aucune carte de cette extension." : filter === "missing" ? "Bravo, l'extension est complète !" : filter === "trade" ? "Aucune carte de cette extension n'est marquée à échanger. Touche une carte pour indiquer combien tu en as et combien tu veux échanger." : "Aucune carte ne correspond."}</div>`;
 }
 
 function refreshKpis(){
@@ -530,21 +575,27 @@ function refreshKpis(){
   $("#pnote").textContent = `${st.priced}/${st.total} prix chargés`;
 }
 
+// Redessine une carte de la grille après un changement
+function refreshCardEl(id){
+  if(view === "trades"){ renderTrades(); return; }
+  const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  if(!el || !current) return;
+  const c = current.cards.find(x => x.id === id); if(!c) return;
+  const hide = (filter === "owned" && !owned[id]) || (filter === "missing" && owned[id]) || (filter === "trade" && !tradeN(id));
+  if(hide){ el.remove(); return; }
+  const tmp = document.createElement("div"); tmp.innerHTML = cardHTML(c);
+  el.replaceWith(tmp.firstElementChild);
+}
 function refreshCardPrice(id){
   const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"] .pslot`);
   if(el) el.innerHTML = priceHTML(id);
 }
 
 function setOwned(id, val){
-  if(val){ owned[id] = true; const c = current?.cards.find(x => x.id === id); if(c) ownedMeta[id] = {name:c.name, set:current.name, n:c.localId}; }
-  else { delete owned[id]; delete ownedMeta[id]; }
+  if(val){ owned[id] = true; const c = current?.cards.find(x => x.id === id); if(c) ownedMeta[id] = metaFrom(c, current); }
+  else { delete owned[id]; delete ownedMeta[id]; delete items[id]; LS.set("pk.items", items); }
   LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
-  const card = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
-  if(card){
-    card.classList.toggle("owned", !!val);
-    const cb = card.querySelector("input[data-own]"); if(cb) cb.checked = !!val;
-    if((filter === "owned" && !val) || (filter === "missing" && val)) card.remove();
-  }
+  refreshCardEl(id);
   refreshKpis(); updateGlobal(); renderSide();
 }
 
@@ -575,9 +626,8 @@ $("#main").addEventListener("click", async e => {
       setTimeout(() => { if(e.target.isConnected){ delete e.target.dataset.confirm; e.target.textContent = "Tout cocher"; } }, 3500);
       return;
     }
-    list.forEach(c => { if(allOwned) delete owned[c.id]; else { owned[c.id] = true; ownedMeta[c.id] = {name:c.name, set:current.name, n:c.localId}; } });
-    if(allOwned) list.forEach(c => delete ownedMeta[c.id]);
-    LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
+    list.forEach(c => { if(allOwned){ delete owned[c.id]; delete ownedMeta[c.id]; delete items[c.id]; } else if(!owned[c.id]){ owned[c.id] = true; ownedMeta[c.id] = metaFrom(c, current); } });
+    LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta); LS.set("pk.items", items);
     renderSet(); updateGlobal(); renderSide();
   }
 });
@@ -600,6 +650,62 @@ async function loadAllPrices(btn){
   }
 }
 
+function renderTrades(){
+  view = "trades"; current = null;
+  document.body.classList.remove("drawer");
+  renderSide();
+  const ids = Object.keys(owned).filter(id => tradeN(id) > 0);
+  const groups = {};
+  ids.forEach(id => { const m = ownedMeta[id] || {}; const k = m.set || idSet(id); (groups[k] = groups[k] || []).push(id); });
+  const numKey = id => { const n = parseInt(ownedMeta[id]?.n ?? id.slice(id.lastIndexOf("-") + 1), 10); return isNaN(n) ? 1e6 : n; };
+  const total = ids.reduce((a, id) => a + tradeN(id), 0);
+  const value = ids.reduce((a, id) => a + (refPrice(id) || 0) * tradeN(id), 0);
+  let html = `<section class="sethead">
+      <div style="min-width:0"><h1>Mes cartes à échanger</h1>
+      <div class="sub">Les cartes que tu es prêt à échanger, toutes extensions confondues.</div></div>
+      <div class="kpis">
+        <div class="kpi"><b>${total}</b><span>exemplaires</span></div>
+        <div class="kpi"><b>${ids.length}</b><span>cartes différentes</span></div>
+        <div class="kpi"><b>${esc(fmtEur(value))}</b><span>valeur estimée</span></div>
+      </div>
+    </section>
+    <div class="filters">${ids.length ? `<button class="btn primary" id="copyTrades">Copier la liste</button><span class="progress-note">à coller dans un message pour proposer un échange</span>` : ""}</div>`;
+  if(!ids.length){
+    html += `<div class="empty">Aucune carte à échanger pour l'instant.<br>Ouvre une extension, touche une carte que tu possèdes, puis règle « Prêt à échanger ».</div>`;
+  }
+  Object.keys(groups).sort((a, b) => a.localeCompare(b, "fr")).forEach(k => {
+    html += `<div class="tradegroup"><h2>${esc(k)}</h2><div class="grid">`;
+    groups[k].sort((a, b) => numKey(a) - numKey(b)).forEach(id => {
+      const m = ownedMeta[id] || {}, cd = items[id]?.c;
+      const img = m.img ? `<img src="${esc(m.img)}/low.webp" alt="${esc(m.name || id)}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}else{this.remove()}">` : "";
+      html += `<article class="card owned tradecard" data-id="${esc(id)}">
+        <button type="button" class="pic" data-open="${esc(id)}" aria-label="Voir ${esc(m.name || id)}"><span class="noimg">${esc(m.name || id)}</span>${img}${tagsHTML(id)}</button>
+        <div class="cinfo"><span class="cname" title="${esc(m.name || id)}">${esc(m.name || id)}</span><span class="cnum">n° ${esc(m.n || "")}</span></div>
+        <div class="crow"><span class="pslot">${priceHTML(id)}</span><span class="cond">${esc(cd ? CONDS_SHORT[cd] : "état ?")}</span></div>
+      </article>`;
+    });
+    html += `</div></div>`;
+  });
+  $("#main").innerHTML = html;
+  const cp = $("#copyTrades");
+  if(cp) cp.onclick = async () => {
+    const lines = ["Mes cartes Pokémon à échanger :"];
+    Object.keys(groups).sort((a, b) => a.localeCompare(b, "fr")).forEach(k => {
+      lines.push("", k);
+      groups[k].sort((a, b) => numKey(a) - numKey(b)).forEach(id => {
+        const m = ownedMeta[id] || {}, cd = items[id]?.c, p = refPrice(id);
+        lines.push(`• ${m.name || id} (n° ${m.n || "?"})${tradeN(id) > 1 ? " ×" + tradeN(id) : ""}${cd ? " – " + CONDS_SHORT[cd] : ""}${p ? " – env. " + fmtEur(p) : ""}`);
+      });
+    });
+    const text = lines.join("\n");
+    try{ await navigator.clipboard.writeText(text); toast("Liste copiée"); }
+    catch(e){
+      const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "width:100%;height:200px;margin-top:10px";
+      cp.parentElement.after(ta); ta.select(); toast("Sélectionne le texte puis copie-le");
+    }
+  };
+}
+
 async function autoPriceOwned(set){
   const ids = set.cards.map(c => c.id).filter(id => owned[id] && !priceFresh(id));
   if(!ids.length) return;
@@ -615,7 +721,9 @@ async function autoPriceOwned(set){
 /* ================= Fiche détaillée ================= */
 async function openCard(id){
   const dlg = $("#dlg");
-  const c = current.cards.find(x => x.id === id);
+  const m = ownedMeta[id] || {};
+  const c = current?.cards.find(x => x.id === id) || {id, name:m.name || id, localId:m.n || id.slice(id.lastIndexOf("-") + 1), image:m.img};
+  const setName = current?.cards.some(x => x.id === id) ? current.name : (m.set || idSet(id));
   dlg.innerHTML = `<div class="loader"><span class="spin"></span>Chargement de la carte…</div>`;
   if(!dlg.open) dlg.showModal();
   let card = null;
@@ -637,8 +745,16 @@ async function openCard(id){
       <div>${img ? `<img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}">` : `<div class="empty">Image indisponible</div>`}</div>
       <div style="min-width:0">
         <h2>${esc(card.name || c.name)}</h2>
-        <div class="sub">${esc(current.name)} · n° ${esc(c.localId)}${card.rarity ? " · " + esc(card.rarity) : ""}${card.illustrator ? " · illustration " + esc(card.illustrator) : ""}</div>
+        <div class="sub">${esc(setName)} · n° ${esc(c.localId)}${card.rarity ? " · " + esc(card.rarity) : ""}${card.illustrator ? " · illustration " + esc(card.illustrator) : ""}</div>
         <label class="own" style="font-size:14px;padding:6px 14px 6px 10px"><input type="checkbox" id="dlgOwn"${owned[id] ? " checked" : ""}>Je possède cette carte</label>
+        <div class="mine" id="mine"${owned[id] ? "" : " hidden"}>
+          <div class="mine-row"><span>Exemplaires<small>combien tu en as</small></span>
+            <span class="stepper"><button type="button" data-step="q" data-d="-1" aria-label="Un de moins">−</button><output id="mQ"></output><button type="button" data-step="q" data-d="1" aria-label="Un de plus">+</button></span></div>
+          <div class="mine-row"><span>État</span>
+            <select id="mC" aria-label="État de la carte">${CONDS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div>
+          <div class="mine-row"><span>Prêt à échanger<small>nombre d'exemplaires que tu veux bien échanger</small></span>
+            <span class="stepper"><button type="button" data-step="t" data-d="-1" aria-label="Un de moins">−</button><output id="mT"></output><button type="button" data-step="t" data-d="1" aria-label="Un de plus">+</button></span></div>
+        </div>
         <h3>Mon prix</h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 6px">
           <input type="number" id="myPrice" min="0" step="0.01" inputmode="decimal" placeholder="ex. 4,50" value="${typeof custom[id] === "number" ? custom[id] : ""}"
@@ -660,7 +776,26 @@ async function openCard(id){
       </div>
     </div>`;
   dlg.querySelector(".close").onclick = () => dlg.close();
-  dlg.querySelector("#dlgOwn").onchange = e => setOwned(id, e.target.checked);
+  const syncMine = () => {
+    const box = dlg.querySelector("#mine"); if(!box) return;
+    box.hidden = !owned[id];
+    const q = qty(id) || 1, t = tradeN(id);
+    dlg.querySelector("#mQ").textContent = q;
+    dlg.querySelector("#mT").textContent = t;
+    dlg.querySelector("#mC").value = items[id]?.c || "";
+    box.querySelector('[data-step="q"][data-d="-1"]').disabled = q <= 1;
+    box.querySelector('[data-step="t"][data-d="-1"]').disabled = t <= 0;
+    box.querySelector('[data-step="t"][data-d="1"]').disabled = t >= q;
+  };
+  syncMine();
+  const afterItem = () => { syncMine(); refreshCardEl(id); refreshKpis(); updateGlobal(); };
+  dlg.querySelector("#mine").addEventListener("click", e => {
+    const b = e.target.closest("[data-step]"); if(!b) return;
+    const k = b.dataset.step, d = +b.dataset.d;
+    setItem(id, {[k]: (k === "q" ? qty(id) : tradeN(id)) + d}); afterItem();
+  });
+  dlg.querySelector("#mC").onchange = e => { setItem(id, {c:e.target.value}); afterItem(); };
+  dlg.querySelector("#dlgOwn").onchange = e => { setOwned(id, e.target.checked); syncMine(); };
   const afterCustom = () => { LS.set("pk.custom", custom); refreshCardPrice(id); refreshKpis(); updateGlobal(); openCard(id); };
   dlg.querySelector("#myPriceSave").onclick = () => {
     const v = parseFloat(String(dlg.querySelector("#myPrice").value).replace(",", "."));
@@ -677,7 +812,10 @@ function updateGlobal(){
   const ids = Object.keys(owned);
   $("#gOwned").textContent = ids.length.toLocaleString("fr-FR");
   let v = 0, priced = 0;
-  ids.forEach(id => { const p = refPrice(id); if(p){ v += p; priced++; } });
+  ids.forEach(id => { const p = refPrice(id); if(p){ v += p * qty(id); priced++; } });
+  const copies = ids.reduce((a, id) => a + qty(id), 0);
+  $("#gOwned").title = `${copies} exemplaires au total`;
+  $("#gTrade").textContent = ids.reduce((a, id) => a + tradeN(id), 0);
   $("#gValue").textContent = priced ? fmtEur(v) : "—";
   const missing = ids.filter(id => !priceFresh(id)).length;
   $("#gCover").textContent = missing ? `valeur · ${ids.length - missing}/${ids.length} prix chargés` : "valeur estimée";
@@ -700,7 +838,7 @@ async function calcGlobal(){
 
 /* ================= Sauvegarde ================= */
 $("#exportBtn").addEventListener("click", () => {
-  const data = {app:"classeur-pokemon", version:1, date:new Date().toISOString(), owned:Object.keys(owned), details:ownedMeta, customPrices:custom};
+  const data = {app:"classeur-pokemon", version:1, date:new Date().toISOString(), owned:Object.keys(owned), details:ownedMeta, customPrices:custom, items};
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -718,8 +856,9 @@ $("#importFile").addEventListener("change", async e => {
     d.owned.forEach(id => owned[id] = true);
     Object.assign(ownedMeta, d.details || {});
     if(d.customPrices){ Object.assign(custom, d.customPrices); LS.set("pk.custom", custom); }
+    if(d.items){ Object.assign(items, d.items); LS.set("pk.items", items); }
     LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
-    updateGlobal(); renderSide(); if(current) renderSet();
+    updateGlobal(); renderSide(); if(current) renderSet(); else if(view === "trades") renderTrades();
     toast(`${d.owned.length} cartes importées`);
   }catch(err){ toast("Ce fichier n'est pas une sauvegarde du classeur"); }
   e.target.value = "";
@@ -738,7 +877,7 @@ $("#gCalc").addEventListener("click", calcGlobal);
 $("#priceMode").value = priceMode;
 $("#priceMode").addEventListener("change", e => {
   priceMode = e.target.value; LS.set("pk.priceMode", priceMode);
-  updateGlobal(); if(current) renderSet();
+  updateGlobal(); if(current) renderSet(); else if(view === "trades") renderTrades();
   toast("Prix utilisé : " + MODE_LABEL[priceMode].toLowerCase());
 });
 updateGlobal();
