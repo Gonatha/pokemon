@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mon Classeur Pokémon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout : un classeur — séries/extensions à gauche, pochettes de cartes à droite */
+:root{
+  --bg:#eef1f6; --surface:#ffffff; --surface-2:#f5f7fb; --line:#d9dfea;
+  --fg:#18203a; --muted:#5d6886; --accent:#e3350d; --accent-ink:#ffffff;
+  --gold:#d9a400; --ok:#1d9a5b; --slot:#e3e8f1;
+  --shadow:0 1px 2px rgba(24,32,58,.08),0 4px 14px rgba(24,32,58,.06);
+  --f-display:"Rubik",system-ui,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1424; --surface:#171d31; --surface-2:#1d2440; --line:#2b3456;
+  --fg:#e8ecf7; --muted:#97a2c3; --accent:#ff5a36; --accent-ink:#ffffff;
+  --gold:#f2c230; --ok:#3cc982; --slot:#212945;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1424; --surface:#171d31; --surface-2:#1d2440; --line:#2b3456;
+  --fg:#e8ecf7; --muted:#97a2c3; --accent:#ff5a36; --accent-ink:#ffffff;
+  --gold:#f2c230; --ok:#3cc982; --slot:#212945;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3); color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--f-body)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+img{max-width:100%}
+[hidden]{display:none!important}
+
+/* ---------- En-tête ---------- */
+header.top{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);
+  padding:10px max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left));
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font:800 20px/1 var(--f-display);letter-spacing:-.01em}
+.ball{width:26px;height:26px;border-radius:50%;border:3px solid var(--fg);position:relative;overflow:hidden;flex:none;
+  background:linear-gradient(var(--accent) 0 45%,var(--fg) 45% 55%,var(--surface) 55%)}
+.ball::after{content:"";position:absolute;inset:50% auto auto 50%;width:9px;height:9px;transform:translate(-50%,-50%);
+  border-radius:50%;background:var(--surface);border:2.5px solid var(--fg)}
+.gstats{display:flex;gap:18px;margin-left:auto;flex-wrap:wrap}
+.gstat{display:flex;flex-direction:column;line-height:1.15}
+.gstat b{font:700 16px var(--f-mono);font-variant-numeric:tabular-nums}
+.gstat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:6px 12px;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn:disabled{opacity:.55;cursor:default}
+select.btn{padding-right:8px}
+.menu-btn{display:none}
+
+/* ---------- Mise en page ---------- */
+.app{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:calc(100% - 60px)}
+aside.side{border-right:1px solid var(--line);background:var(--surface);position:sticky;top:57px;
+  height:calc(100vh - 57px);overflow-y:auto;padding:12px 10px 40px}
+.side-search{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);margin-bottom:10px}
+.serie{margin-bottom:4px}
+.serie>button{width:100%;display:flex;align-items:center;gap:8px;background:none;border:0;padding:8px 6px;border-radius:8px;
+  font:700 13px var(--f-display);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left}
+.serie>button:hover{background:var(--surface-2)}
+.serie>button .chev{margin-left:auto;transition:transform .15s}
+.serie.open>button .chev{transform:rotate(90deg)}
+.serie .sets{display:none;padding-left:2px}
+.serie.open .sets{display:block}
+.setlink{display:grid;grid-template-columns:48px minmax(0,1fr);gap:10px;align-items:center;width:100%;text-align:left;
+  background:none;border:0;border-radius:8px;padding:6px}
+.setlink:hover{background:var(--surface-2)}
+.setlink.active{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--accent)}
+.setlink img{width:48px;height:26px;object-fit:contain}
+.setlink .nm{font-weight:600;font-size:13px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.setlink .meta{font:500 11px var(--f-mono);color:var(--muted);display:flex;align-items:center;gap:6px}
+.bar{height:4px;border-radius:2px;background:var(--slot);overflow:hidden;flex:1}
+.bar i{display:block;height:100%;background:var(--ok)}
+.bar.done i{background:var(--gold)}
+
+main{padding:20px max(16px,env(safe-area-inset-right)) 60px max(16px,env(safe-area-inset-left));min-width:0}
+
+/* ---------- Bandeau d'extension ---------- */
+.sethead{display:flex;gap:20px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);
+  border-radius:14px;padding:16px 18px;box-shadow:var(--shadow)}
+.sethead img.logo{height:64px;max-width:180px;object-fit:contain}
+.sethead h1{margin:0;font:800 26px/1.1 var(--f-display);letter-spacing:-.01em;text-wrap:balance}
+.sethead .sub{color:var(--muted);font-size:13px}
+.kpis{display:flex;gap:22px;margin-left:auto;flex-wrap:wrap}
+.kpi b{display:block;font:700 22px/1.1 var(--f-mono);font-variant-numeric:tabular-nums}
+.kpi span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.bigbar{flex-basis:100%;height:8px;border-radius:4px;background:var(--slot);overflow:hidden}
+.bigbar i{display:block;height:100%;background:var(--ok);transition:width .3s}
+
+.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:16px 0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:6px 12px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.filters input[type=search]{flex:1;min-width:160px;max-width:280px;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface)}
+.progress-note{font-size:12px;color:var(--muted)}
+
+/* ---------- Grille de cartes ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:8px;
+  transition:transform .12s,box-shadow .12s}
+.card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.pic{position:relative;aspect-ratio:63/88;border-radius:7px;background:var(--slot);overflow:hidden;border:0;padding:0;width:100%;max-width:100%}
+.pic img{width:100%;height:100%;object-fit:cover;display:block;transition:filter .2s,opacity .2s}
+.card:not(.owned) .pic img{filter:grayscale(1);opacity:.45}
+.card:not(.owned):hover .pic img{opacity:.8;filter:grayscale(.3)}
+.pic .noimg{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center;padding:10px}
+.pic:has(img) .noimg{display:none}
+.badge-owned{position:absolute;top:6px;right:6px;background:var(--ok);color:#fff;border-radius:50%;width:24px;height:24px;
+  display:grid;place-items:center;font-weight:700;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.card:not(.owned) .badge-owned{display:none}
+.cinfo{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.cname{font-weight:600;font-size:13px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cnum{font:500 11px var(--f-mono);color:var(--muted);white-space:nowrap}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.price{font:700 13px var(--f-mono);font-variant-numeric:tabular-nums}
+.price.none{color:var(--muted);font-weight:500}
+.price.hot{color:var(--accent)}
+.price button{border:0;background:none;padding:0;color:var(--muted);font:500 12px var(--f-body);text-decoration:underline}
+.own{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;cursor:pointer;user-select:none;
+  border:1px solid var(--line);border-radius:999px;padding:3px 9px 3px 6px;background:var(--surface-2)}
+.own input{accent-color:var(--ok);margin:0;width:15px;height:15px;cursor:pointer}
+.card.owned .own{border-color:var(--ok);color:var(--ok)}
+
+.empty,.welcome{background:var(--surface);border:1px dashed var(--line);border-radius:14px;padding:30px;text-align:center;color:var(--muted)}
+.welcome h2{font:800 22px var(--f-display);color:var(--fg);margin:0 0 6px}
+.loader{display:flex;align-items:center;gap:10px;color:var(--muted);padding:30px;justify-content:center}
+.spin{width:18px;height:18px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:sp 0.8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.error{background:color-mix(in srgb,var(--accent) 10%,var(--surface));border:1px solid var(--accent);border-radius:10px;padding:12px 14px;margin:10px 0}
+
+/* ---------- Fiche carte ---------- */
+dialog{border:0;border-radius:16px;padding:0;background:var(--surface);color:var(--fg);max-width:min(860px,calc(100vw - 32px));width:100%;
+  box-shadow:0 20px 60px rgba(0,0,0,.4)}
+dialog::backdrop{background:rgba(10,14,28,.65)}
+.dlg{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:22px;padding:20px}
+.dlg img{width:100%;border-radius:12px;display:block}
+.dlg h2{margin:0;font:800 24px/1.15 var(--f-display)}
+.dlg .sub{color:var(--muted);margin-bottom:12px}
+.ptable{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 14px}
+.ptable th{text-align:left;font-weight:500;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--line)}
+.ptable td{text-align:right;font:600 13px var(--f-mono);font-variant-numeric:tabular-nums;padding:5px 0;border-bottom:1px solid var(--line)}
+.dlg h3{font:700 12px var(--f-display);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:14px 0 2px}
+.close{position:absolute;top:10px;right:10px;border:0;background:var(--surface-2);border-radius:50%;width:34px;height:34px;font-size:18px}
+.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.links a{color:var(--accent);font-weight:600}
+.updated{font-size:11px;color:var(--muted)}
+
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);
+  padding:9px 16px;border-radius:9px;font-weight:500;z-index:50;box-shadow:var(--shadow)}
+
+@media (max-width:860px){
+  .menu-btn{display:inline-block}
+  .app{grid-template-columns:minmax(0,1fr)}
+  aside.side{position:fixed;inset:0 auto 0 0;width:min(320px,88vw);height:auto;z-index:40;transform:translateX(-102%);
+    transition:transform .2s;box-shadow:var(--shadow);padding-top:calc(12px + env(safe-area-inset-top))}
+  body.drawer aside.side{transform:none}
+  body.drawer::after{content:"";position:fixed;inset:0;background:rgba(10,14,28,.5);z-index:35}
+  .gstats{order:3;margin-left:0;width:100%}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+  .dlg{grid-template-columns:minmax(0,1fr)}
+  .dlg img{max-width:300px;margin:0 auto}
+  .kpis{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <button class="btn menu-btn" id="menuBtn" aria-label="Afficher les extensions">☰ Extensions</button>
+  <div class="brand"><span class="ball" aria-hidden="true"></span>Mon Classeur Pokémon</div>
+  <div class="gstats">
+    <div class="gstat"><b id="gOwned">0</b><span>cartes possédées</span></div>
+    <div class="gstat"><b id="gValue">—</b><span>valeur estimée</span></div>
+  </div>
+  <div class="tools">
+    <select class="btn" id="lang" aria-label="Langue des cartes">
+      <option value="fr">Français</option><option value="en">English</option>
+    </select>
+    <button class="btn" id="exportBtn">Exporter</button>
+    <button class="btn" id="importBtn">Importer</button>
+    <input type="file" id="importFile" accept="application/json" hidden>
+  </div>
+</header>
+
+<div class="app">
+  <aside class="side" id="side">
+    <input class="side-search" id="setSearch" type="search" placeholder="Chercher une extension…" aria-label="Chercher une extension">
+    <div id="series"><div class="loader"><span class="spin"></span>Chargement des collections…</div></div>
+  </aside>
+  <main id="main">
+    <div class="welcome">
+      <h2>Choisis une extension</h2>
+      <p>Sélectionne une collection dans la liste pour afficher ses cartes, coche celles que tu possèdes et consulte leur prix sur le marché.</p>
+    </div>
+  </main>
+</div>
+
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* ================= Données & stockage ================= */
+const API = "https://api.tcgdex.net/v2";
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ console.warn("stockage plein", e); } }
+};
+const DAY = 86400000;
+let lang = LS.get("pk.lang", "fr");
+let owned = LS.get("pk.owned", {});          // { cardId: true }
+let prices = LS.get("pk.prices", {});        // { cardId: {t, cm:{...}, tp:{...}} }
+let ownedMeta = LS.get("pk.ownedMeta", {});  // { cardId: {name, set} } pour l'export lisible
+let seriesData = [];                          // [{id,name,logo,sets:[...]}]
+let current = null;                           // extension affichée
+let filter = "all", query = "", sortBy = "num";
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtEur = v => v == null || isNaN(v) ? "—" : v.toLocaleString("fr-FR",{style:"currency",currency:"EUR",minimumFractionDigits:2});
+const fmtUsd = v => v == null || isNaN(v) ? "—" : v.toLocaleString("fr-FR",{style:"currency",currency:"USD",minimumFractionDigits:2});
+const T = (fr, en) => lang === "fr" ? fr : en;
+
+async function getJSON(path, cacheKey, maxAge){
+  if(cacheKey){
+    const c = LS.get(cacheKey);
+    if(c && Date.now() - c.t < maxAge) return c.d;
+  }
+  const r = await fetch(API + path);
+  if(!r.ok) throw new Error("HTTP " + r.status + " sur " + path);
+  const d = await r.json();
+  if(cacheKey) LS.set(cacheKey, {t:Date.now(), d});
+  return d;
+}
+
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 2200);
+}
+
+/* ================= Prix ================= */
+function compactPricing(p){
+  if(!p) return null;
+  const out = {};
+  const cm = p.cardmarket;
+  if(cm){
+    out.cm = {u:cm.updated, id:cm.idProduct,
+      trend:cm.trend, avg:cm.avg, low:cm.low, avg7:cm.avg7, avg30:cm.avg30,
+      trendH:cm["trend-holo"], avgH:cm["avg-holo"], lowH:cm["low-holo"], avg30H:cm["avg30-holo"]};
+  }
+  const tp = p.tcgplayer;
+  if(tp){
+    out.tp = {u:tp.updated, v:{}};
+    for(const k of Object.keys(tp)){
+      const x = tp[k];
+      if(x && typeof x === "object" && ("marketPrice" in x || "midPrice" in x))
+        out.tp.v[k] = {m:x.marketPrice, lo:x.lowPrice, mid:x.midPrice, hi:x.highPrice};
+    }
+  }
+  return out;
+}
+// Prix de référence : tendance Cardmarket (€), sinon moyenne, sinon variante holo
+function refPrice(id){
+  const p = prices[id]; if(!p || !p.cm) return null;
+  const c = p.cm;
+  const v = [c.trend, c.avg, c.trendH, c.avgH, c.low].find(x => typeof x === "number" && x > 0);
+  return v ?? null;
+}
+async function fetchPrice(id, force){
+  const c = prices[id];
+  if(!force && c && Date.now() - c.t < DAY) return c;
+  const card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
+  prices[id] = {t:Date.now(), ...(compactPricing(card.pricing) || {}), r:card.rarity || null};
+  savePricesSoon();
+  return {card, price:prices[id]};
+}
+let _ps; function savePricesSoon(){ clearTimeout(_ps); _ps = setTimeout(() => LS.set("pk.prices", prices), 400); }
+
+/* ================= Barre latérale ================= */
+async function loadSeries(){
+  const box = $("#series");
+  try{
+    const list = await getJSON(`/${lang}/series`, `pk.series.${lang}`, 3*DAY);
+    const details = await Promise.all(list.filter(s => s.id !== "tcgp").map(s =>
+      getJSON(`/${lang}/series/${encodeURIComponent(s.id)}`, `pk.serie.${lang}.${s.id}`, 3*DAY).catch(() => null)));
+    seriesData = details.filter(Boolean).filter(s => s.sets && s.sets.length).reverse();
+    renderSide();
+    const h = decodeURIComponent(location.hash.slice(1));
+    if(h.startsWith("set-")) openSet(h.slice(4));
+  }catch(e){
+    box.innerHTML = `<div class="error">Impossible de charger les collections (${esc(e.message)}).<br>Vérifie ta connexion internet puis recharge la page.</div>`;
+  }
+}
+
+function setProgress(set){
+  const total = set.cardCount?.total || 0;
+  const ids = LS.get(`pk.setids.${set.id}`);
+  const n = ids ? ids.filter(id => owned[id]).length : Object.keys(owned).filter(id => id.startsWith(set.id + "-")).length;
+  return {n, total};
+}
+
+function renderSide(){
+  const q = $("#setSearch").value.trim().toLowerCase();
+  const box = $("#series");
+  const openIds = LS.get("pk.openSeries", null);
+  let html = "";
+  seriesData.forEach((s, i) => {
+    const sets = s.sets.slice().reverse().filter(st => !q || st.name.toLowerCase().includes(q) || st.id.toLowerCase().includes(q));
+    if(!sets.length) return;
+    const isOpen = q || (openIds ? openIds.includes(s.id) : i === 0) || (current && s.sets.some(x => x.id === current.id));
+    html += `<div class="serie${isOpen ? " open" : ""}" data-serie="${esc(s.id)}">
+      <button type="button" class="serie-toggle">${esc(s.name)}<span class="chev">›</span></button><div class="sets">`;
+    for(const st of sets){
+      const {n, total} = setProgress(st);
+      const pct = total ? Math.min(100, n / total * 100) : 0;
+      html += `<button type="button" class="setlink${current && current.id === st.id ? " active" : ""}" data-set="${esc(st.id)}">
+        ${st.logo ? `<img src="${esc(st.logo)}.webp" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span></span>`}
+        <span style="min-width:0"><div class="nm">${esc(st.name)}</div>
+        <div class="meta"><span>${n}/${total}</span><span class="bar${total && n >= total ? " done" : ""}"><i style="width:${pct}%"></i></span></div></span>
+      </button>`;
+    }
+    html += `</div></div>`;
+  });
+  box.innerHTML = html || `<div class="empty">Aucune extension trouvée.</div>`;
+}
+
+$("#series").addEventListener("click", e => {
+  const tg = e.target.closest(".serie-toggle");
+  if(tg){
+    const el = tg.parentElement; el.classList.toggle("open");
+    LS.set("pk.openSeries", [...document.querySelectorAll(".serie.open")].map(x => x.dataset.serie));
+    return;
+  }
+  const sl = e.target.closest(".setlink");
+  if(sl){ location.hash = "set-" + sl.dataset.set; document.body.classList.remove("drawer"); }
+});
+$("#setSearch").addEventListener("input", renderSide);
+window.addEventListener("hashchange", () => {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if(h.startsWith("set-")) openSet(h.slice(4));
+});
+$("#menuBtn").addEventListener("click", () => document.body.classList.toggle("drawer"));
+document.addEventListener("click", e => {
+  if(document.body.classList.contains("drawer") && !e.target.closest("#side") && !e.target.closest("#menuBtn")) document.body.classList.remove("drawer");
+});
+
+/* ================= Extension ================= */
+async function openSet(id){
+  const main = $("#main");
+  main.innerHTML = `<div class="loader"><span class="spin"></span>Chargement de l'extension…</div>`;
+  try{
+    const set = await getJSON(`/${lang}/sets/${encodeURIComponent(id)}`, `pk.set.${lang}.${id}`, 2*DAY);
+    // Certaines cartes n'ont pas d'image dans la langue choisie : on complète avec l'anglais
+    if(lang !== "en" && set.cards.some(c => !c.image)){
+      try{
+        const en = await getJSON(`/en/sets/${encodeURIComponent(id)}`, `pk.set.en.${id}`, 2*DAY);
+        const m = Object.fromEntries(en.cards.map(c => [c.id, c]));
+        set.cards.forEach(c => { if(!c.image && m[c.id]?.image) c.image = m[c.id].image; });
+      }catch(e){}
+    }
+    LS.set(`pk.setids.${set.id}`, set.cards.map(c => c.id));
+    current = set;
+    renderSet();
+    renderSide();
+    window.scrollTo({top:0});
+  }catch(e){
+    main.innerHTML = `<div class="error">Impossible de charger cette extension (${esc(e.message)}).</div>`;
+  }
+}
+
+function setStats(){
+  const cards = current.cards;
+  let n = 0, vOwned = 0, vMissing = 0, priced = 0;
+  for(const c of cards){
+    const p = refPrice(c.id);
+    if(prices[c.id]) priced++;
+    if(owned[c.id]){ n++; if(p) vOwned += p; } else if(p) vMissing += p;
+  }
+  return {n, total:cards.length, vOwned, vMissing, priced};
+}
+
+function renderSet(){
+  const s = current, st = setStats();
+  const pct = st.total ? st.n / st.total * 100 : 0;
+  const date = s.releaseDate ? new Date(s.releaseDate).toLocaleDateString("fr-FR",{year:"numeric",month:"long",day:"numeric"}) : "";
+  $("#main").innerHTML = `
+    <section class="sethead">
+      ${s.logo ? `<img class="logo" src="${esc(s.logo)}.webp" alt="${esc(s.name)}" onerror="this.remove()">` : ""}
+      <div style="min-width:0">
+        <h1>${esc(s.name)}</h1>
+        <div class="sub">${esc(s.serie?.name || "")}${date ? " · sortie le " + esc(date) : ""} · ${esc(s.cardCount?.official ?? st.total)} cartes officielles${s.cardCount?.total > s.cardCount?.official ? " + " + (s.cardCount.total - s.cardCount.official) + " secrètes" : ""}</div>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><b id="kOwned">${st.n}/${st.total}</b><span>possédées</span></div>
+        <div class="kpi"><b id="kVal">${fmtEur(st.vOwned)}</b><span>valeur de mes cartes</span></div>
+        <div class="kpi"><b id="kMiss">${fmtEur(st.vMissing)}</b><span>coût des manquantes</span></div>
+      </div>
+      <div class="bigbar"><i id="kBar" style="width:${pct}%"></i></div>
+    </section>
+    <div class="filters">
+      <div class="seg" role="group" aria-label="Filtrer">
+        <button type="button" data-f="all" aria-pressed="${filter==="all"}">Toutes</button>
+        <button type="button" data-f="owned" aria-pressed="${filter==="owned"}">Je l'ai</button>
+        <button type="button" data-f="missing" aria-pressed="${filter==="missing"}">Il me manque</button>
+      </div>
+      <input type="search" id="q" placeholder="Nom ou numéro…" value="${esc(query)}" aria-label="Chercher une carte">
+      <select class="btn" id="sort" aria-label="Trier">
+        <option value="num"${sortBy==="num"?" selected":""}>Tri : numéro</option>
+        <option value="price"${sortBy==="price"?" selected":""}>Tri : prix décroissant</option>
+        <option value="name"${sortBy==="name"?" selected":""}>Tri : nom</option>
+      </select>
+      <button class="btn primary" id="loadPrices">${st.priced >= st.total ? "Actualiser les prix" : "Charger les prix du set"}</button>
+      <button class="btn" id="checkAll">Tout cocher</button>
+      <span class="progress-note" id="pnote">${st.priced}/${st.total} prix chargés</span>
+    </div>
+    <div class="grid" id="grid"></div>`;
+  renderGrid();
+}
+
+function visibleCards(){
+  const q = query.trim().toLowerCase();
+  let list = current.cards.filter(c => {
+    if(filter === "owned" && !owned[c.id]) return false;
+    if(filter === "missing" && owned[c.id]) return false;
+    if(q && !(c.name.toLowerCase().includes(q) || String(c.localId).toLowerCase() === q || String(c.localId).toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const numKey = c => { const n = parseInt(c.localId, 10); return isNaN(n) ? 1e6 : n; };
+  if(sortBy === "num") list.sort((a,b) => numKey(a) - numKey(b) || String(a.localId).localeCompare(String(b.localId)));
+  if(sortBy === "name") list.sort((a,b) => a.name.localeCompare(b.name, "fr"));
+  if(sortBy === "price") list.sort((a,b) => (refPrice(b.id) ?? -1) - (refPrice(a.id) ?? -1));
+  return list;
+}
+
+function priceHTML(id){
+  const p = refPrice(id);
+  if(p != null) return `<span class="price${p >= 20 ? " hot" : ""}" title="Tendance Cardmarket">${fmtEur(p)}</span>`;
+  if(prices[id]) return `<span class="price none">pas de prix</span>`;
+  return `<span class="price none"><button type="button" data-price="${esc(id)}">voir le prix</button></span>`;
+}
+
+function cardHTML(c){
+  const total = current.cardCount?.official || current.cards.length;
+  const img = c.image ? `<img src="${esc(c.image)}/low.webp" alt="${esc(c.name)}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}else{this.remove()}">` : "";
+  return `<article class="card${owned[c.id] ? " owned" : ""}" data-id="${esc(c.id)}">
+    <button type="button" class="pic" data-open="${esc(c.id)}" aria-label="Voir ${esc(c.name)} en grand">
+      <span class="noimg">${esc(c.name)}<br>image indisponible</span>${img}<span class="badge-owned">✓</span>
+    </button>
+    <div class="cinfo"><span class="cname" title="${esc(c.name)}">${esc(c.name)}</span><span class="cnum">${esc(c.localId)}/${esc(total)}</span></div>
+    <div class="crow">
+      <span class="pslot">${priceHTML(c.id)}</span>
+      <label class="own"><input type="checkbox" data-own="${esc(c.id)}"${owned[c.id] ? " checked" : ""}>Je l'ai</label>
+    </div>
+  </article>`;
+}
+
+function renderGrid(){
+  const list = visibleCards();
+  const g = $("#grid");
+  g.innerHTML = list.length ? list.map(cardHTML).join("") :
+    `<div class="empty" style="grid-column:1/-1">${filter === "owned" ? "Tu n'as encore coché aucune carte de cette extension." : filter === "missing" ? "Bravo, l'extension est complète !" : "Aucune carte ne correspond."}</div>`;
+}
+
+function refreshKpis(){
+  if(!current) return;
+  const st = setStats();
+  $("#kOwned").textContent = `${st.n}/${st.total}`;
+  $("#kVal").textContent = fmtEur(st.vOwned);
+  $("#kMiss").textContent = fmtEur(st.vMissing);
+  $("#kBar").style.width = (st.total ? st.n / st.total * 100 : 0) + "%";
+  $("#pnote").textContent = `${st.priced}/${st.total} prix chargés`;
+}
+
+function refreshCardPrice(id){
+  const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"] .pslot`);
+  if(el) el.innerHTML = priceHTML(id);
+}
+
+function setOwned(id, val){
+  if(val){ owned[id] = true; const c = current?.cards.find(x => x.id === id); if(c) ownedMeta[id] = {name:c.name, set:current.name, n:c.localId}; }
+  else { delete owned[id]; delete ownedMeta[id]; }
+  LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
+  const card = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  if(card){
+    card.classList.toggle("owned", !!val);
+    const cb = card.querySelector("input[data-own]"); if(cb) cb.checked = !!val;
+    if((filter === "owned" && !val) || (filter === "missing" && val)) card.remove();
+  }
+  refreshKpis(); updateGlobal(); renderSide();
+}
+
+/* ================= Événements de la zone principale ================= */
+$("#main").addEventListener("change", e => {
+  if(e.target.matches("input[data-own]")) setOwned(e.target.dataset.own, e.target.checked);
+  if(e.target.id === "sort"){ sortBy = e.target.value; renderGrid(); }
+});
+$("#main").addEventListener("input", e => {
+  if(e.target.id === "q"){ query = e.target.value; renderGrid(); }
+});
+$("#main").addEventListener("click", async e => {
+  const f = e.target.closest("[data-f]");
+  if(f){ filter = f.dataset.f; document.querySelectorAll("[data-f]").forEach(b => b.setAttribute("aria-pressed", b === f)); renderGrid(); return; }
+  const pb = e.target.closest("[data-price]");
+  if(pb){
+    const id = pb.dataset.price; pb.textContent = "…";
+    try{ await fetchPrice(id); }catch(err){ toast("Prix indisponible pour le moment"); }
+    refreshCardPrice(id); refreshKpis(); updateGlobal(); return;
+  }
+  const op = e.target.closest("[data-open]");
+  if(op){ openCard(op.dataset.open); return; }
+  if(e.target.id === "loadPrices") loadAllPrices(e.target);
+  if(e.target.id === "checkAll"){
+    const list = visibleCards(); const allOwned = list.every(c => owned[c.id]);
+    if(!allOwned && !e.target.dataset.confirm){
+      e.target.dataset.confirm = 1; e.target.textContent = `Confirmer (${list.length} cartes)`;
+      setTimeout(() => { if(e.target.isConnected){ delete e.target.dataset.confirm; e.target.textContent = "Tout cocher"; } }, 3500);
+      return;
+    }
+    list.forEach(c => { if(allOwned) delete owned[c.id]; else { owned[c.id] = true; ownedMeta[c.id] = {name:c.name, set:current.name, n:c.localId}; } });
+    if(allOwned) list.forEach(c => delete ownedMeta[c.id]);
+    LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
+    renderSet(); updateGlobal(); renderSide();
+  }
+});
+
+async function loadAllPrices(btn){
+  const set = current, ids = set.cards.map(c => c.id);
+  const force = btn.textContent.startsWith("Actualiser");
+  btn.disabled = true;
+  let done = 0, fail = 0, i = 0;
+  const worker = async () => {
+    while(i < ids.length && current === set){
+      const id = ids[i++];
+      try{ await fetchPrice(id, force); }catch(e){ fail++; }
+      done++;
+      refreshCardPrice(id);
+      if(btn.isConnected) btn.textContent = `Prix… ${done}/${ids.length}`;
+      if(done % 10 === 0) refreshKpis();
+    }
+  };
+  await Promise.all(Array.from({length:6}, worker));
+  LS.set("pk.prices", prices);
+  if(current === set){
+    refreshKpis(); updateGlobal();
+    if(sortBy === "price") renderGrid();
+    if(btn.isConnected){ btn.disabled = false; btn.textContent = "Actualiser les prix"; }
+    toast(fail ? `${ids.length - fail} prix chargés, ${fail} indisponibles` : "Prix à jour");
+  }
+}
+
+/* ================= Fiche détaillée ================= */
+async function openCard(id){
+  const dlg = $("#dlg");
+  const c = current.cards.find(x => x.id === id);
+  dlg.innerHTML = `<div class="loader"><span class="spin"></span>Chargement de la carte…</div>`;
+  dlg.showModal();
+  let card = null;
+  try{
+    card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
+    prices[id] = {t:Date.now(), ...(compactPricing(card.pricing) || {}), r:card.rarity || null};
+    savePricesSoon(); refreshCardPrice(id); refreshKpis(); updateGlobal();
+  }catch(e){ card = {...c}; }
+  const p = prices[id] || {};
+  const img = card.image || c.image;
+  const cm = p.cm, tp = p.tp;
+  const row = (label, v, f = fmtEur) => v != null ? `<tr><th>${label}</th><td>${f(v)}</td></tr>` : "";
+  const tpNames = {"normal":"Normale","holofoil":"Holo","reverse-holofoil":"Reverse holo","1st-edition":"1ère édition","1st-edition-holofoil":"1ère édition holo","unlimited":"Unlimited","unlimited-holofoil":"Unlimited holo"};
+  const cmUrl = `https://www.cardmarket.com/fr/Pokemon/Products/Search?searchString=${encodeURIComponent((card.name || c.name) + " " + c.localId)}`;
+  const tpUrl = `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent((card.name || c.name))}`;
+  const dateF = d => d ? new Date(d).toLocaleDateString("fr-FR") : "";
+  dlg.innerHTML = `<button type="button" class="close" aria-label="Fermer">×</button>
+    <div class="dlg">
+      <div>${img ? `<img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}">` : `<div class="empty">Image indisponible</div>`}</div>
+      <div style="min-width:0">
+        <h2>${esc(card.name || c.name)}</h2>
+        <div class="sub">${esc(current.name)} · n° ${esc(c.localId)}${card.rarity ? " · " + esc(card.rarity) : ""}${card.illustrator ? " · illustration " + esc(card.illustrator) : ""}</div>
+        <label class="own" style="font-size:14px;padding:6px 14px 6px 10px"><input type="checkbox" id="dlgOwn"${owned[id] ? " checked" : ""}>Je possède cette carte</label>
+        <h3>Cardmarket (Europe)</h3>
+        ${cm ? `<table class="ptable">
+          ${row("Tendance", cm.trend)}${row("Prix moyen", cm.avg)}${row("Prix le plus bas", cm.low)}${row("Moyenne 7 jours", cm.avg7)}${row("Moyenne 30 jours", cm.avg30)}
+          ${row("Tendance (holo / reverse)", cm.trendH)}${row("Prix bas (holo / reverse)", cm.lowH)}
+        </table><div class="updated">Mis à jour le ${esc(dateF(cm.u))}</div>` : `<p class="sub">Aucun prix Cardmarket disponible pour cette carte.</p>`}
+        <h3>TCGplayer (États-Unis)</h3>
+        ${tp && Object.keys(tp.v).length ? `<table class="ptable">${Object.entries(tp.v).map(([k, v]) =>
+          row("Marché · " + esc(tpNames[k] || k), v.m ?? v.mid, fmtUsd)).join("")}</table><div class="updated">Mis à jour le ${esc(dateF(tp.u))}</div>`
+          : `<p class="sub">Aucun prix TCGplayer disponible pour cette carte.</p>`}
+        <div class="links"><a href="${cmUrl}" target="_blank" rel="noopener">Voir sur Cardmarket ↗</a><a href="${tpUrl}" target="_blank" rel="noopener">Voir sur TCGplayer ↗</a></div>
+      </div>
+    </div>`;
+  dlg.querySelector(".close").onclick = () => dlg.close();
+  dlg.querySelector("#dlgOwn").onchange = e => setOwned(id, e.target.checked);
+}
+$("#dlg").addEventListener("click", e => { if(e.target === e.currentTarget) e.currentTarget.close(); });
+
+/* ================= Totaux globaux ================= */
+function updateGlobal(){
+  const ids = Object.keys(owned);
+  $("#gOwned").textContent = ids.length.toLocaleString("fr-FR");
+  let v = 0, priced = 0;
+  ids.forEach(id => { const p = refPrice(id); if(p){ v += p; priced++; } });
+  $("#gValue").textContent = priced ? fmtEur(v) : "—";
+  $("#gValue").title = `${priced} cartes possédées avec un prix connu sur ${ids.length}`;
+}
+
+/* ================= Sauvegarde ================= */
+$("#exportBtn").addEventListener("click", () => {
+  const data = {app:"classeur-pokemon", version:1, date:new Date().toISOString(), owned:Object.keys(owned), details:ownedMeta};
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `classeur-pokemon-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast("Sauvegarde exportée");
+});
+$("#importBtn").addEventListener("click", () => $("#importFile").click());
+$("#importFile").addEventListener("change", async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const d = JSON.parse(await f.text());
+    if(!Array.isArray(d.owned)) throw new Error("format");
+    d.owned.forEach(id => owned[id] = true);
+    Object.assign(ownedMeta, d.details || {});
+    LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
+    updateGlobal(); renderSide(); if(current) renderSet();
+    toast(`${d.owned.length} cartes importées`);
+  }catch(err){ toast("Ce fichier n'est pas une sauvegarde du classeur"); }
+  e.target.value = "";
+});
+
+/* ================= Langue ================= */
+$("#lang").value = lang;
+$("#lang").addEventListener("change", e => {
+  lang = e.target.value; LS.set("pk.lang", lang);
+  current = null;
+  $("#series").innerHTML = `<div class="loader"><span class="spin"></span>Chargement des collections…</div>`;
+  loadSeries();
+});
+
+updateGlobal();
+loadSeries();
+</script>
+</body>
+</html>
