@@ -106,6 +106,8 @@ main{padding:20px max(16px,env(safe-area-inset-right)) 60px max(16px,env(safe-ar
 .seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
 .filters input[type=search]{flex:1;min-width:160px;max-width:280px;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface)}
 .progress-note{font-size:12px;color:var(--muted)}
+.grid-sec{grid-column:1/-1;margin:18px 0 0;padding-top:16px;border-top:2px dashed var(--line);font:800 18px var(--f-display);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.grid-sec small{font:400 12px var(--f-body);color:var(--muted)}
 
 /* ---------- Grille de cartes ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px}
@@ -339,7 +341,7 @@ function setItem(id, patch){
   it.q = Math.max(1, Math.min(999, it.q|0)); it.t = Math.max(0, Math.min(it.q, it.t|0));
   items[id] = it; LS.set("pk.items", items);
 }
-function metaFrom(c, set){ return {name:c.name, set:set.name, setId:set.id, n:c.localId, img:c.image || null}; }
+function metaFrom(c, set){ return {name:c.name, set:c.setName || set.name, setId:c.src || set.id, n:c.localId, img:c.image || null, alt:c.alt || null}; }
 function idSet(id){ const i = id.lastIndexOf("-"); return i > 0 ? id.slice(0, i) : id; }         // { cardId: prix perso en € }
 let priceMode = LS.get("pk.priceMode", "avg30");  // { cardId: {name, set} } pour l'export lisible
 let seriesData = [];                          // [{id,name,logo,sets:[...]}]
@@ -545,30 +547,127 @@ document.addEventListener("click", e => {
 });
 
 /* ================= Extension ================= */
+/* ================= Images de secours (pokemontcg.io) ================= */
+// Certaines cartes n'ont d'image dans aucune langue de TCGdex (sorties récentes, promos…).
+// On reprend alors l'image anglaise de pokemontcg.io, en rapprochant les cartes par numéro et nom anglais.
+const PTCG = "https://api.pokemontcg.io/v2";
+const PTCG_ALIAS = {"30th":"me55", "30th-c":"me55c", "cel25cc":"cel25c"};
+const normName = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+const normNum = s => String(s || "").toUpperCase().replace(/\d+/g, d => String(parseInt(d, 10)));
+// pokemontcg.io est un service gratuit parfois instable (erreurs 500/502) : on insiste un peu
+async function ptcgJSON(path){
+  for(let i = 0; i < 5; i++){
+    try{ const r = await fetch(PTCG + path); if(r.ok) return await r.json(); }catch(e){}
+    await new Promise(r => setTimeout(r, 600 * 2 ** i));
+  }
+  throw new Error("pokemontcg.io indisponible");
+}
+async function ptcgSetId(setId, enName){
+  if(PTCG_ALIAS[setId]) return PTCG_ALIAS[setId];
+  const want = setId.toLowerCase().replace(/\./g, "pt");
+  let sets = LS.get("pk.ptcg.sets");
+  if(!sets || Date.now() - sets.t > 7*DAY){
+    try{ const d = await ptcgJSON("/sets?pageSize=250&select=id,name"); sets = {t:Date.now(), d:d.data || []}; LS.set("pk.ptcg.sets", sets); }
+    catch(e){ if(!sets) return want; }   // liste indisponible : on tente l'identifiant le plus probable
+  }
+  const hit = sets.d.find(s => s.id.toLowerCase() === want) || (enName && sets.d.find(s => normName(s.name) === normName(enName)));
+  return hit ? hit.id : null;
+}
+// Pour une extension TCGdex : {idCarte: {s: petite image, l: grande image}}
+const altCache = {};
+function altImages(setId, cards, enSetName){
+  if(altCache[setId]) return altCache[setId];
+  const cached = LS.get(`pk.alt.${setId}`);
+  if(cached && Date.now() - cached.t < 7*DAY) return altCache[setId] = Promise.resolve(cached.d);
+  return altCache[setId] = (async () => {
+    const pid = await ptcgSetId(setId, enSetName);
+    const out = {};
+    if(pid){
+      let list = [];
+      for(let page = 1; page <= 5; page++){
+        const d = await ptcgJSON(`/cards?q=set.id:${encodeURIComponent(pid)}&pageSize=250&page=${page}&select=id,name,number,images`);
+        list = list.concat(d.data || []);
+        if((d.data || []).length < 250) break;
+      }
+      const nk = x => { const n = parseInt(x.number, 10); return isNaN(n) ? 1e6 : n; };
+      const pool = list.filter(x => x.images?.small).sort((a, b) => nk(a) - nk(b) || String(a.number).localeCompare(String(b.number)));
+      // Du rapprochement le plus sûr au plus large ; chaque carte pokemontcg.io ne sert qu'une fois
+      const passes = [
+        (c, m) => c.enName && normNum(m.number) === normNum(c.localId) && normName(m.name) === normName(c.enName),
+        (c, m) => c.enName && normName(m.name) === normName(c.enName),
+        (c, m) => { if(!c.enName) return false; const a = normName(m.name), b = normName(c.enName); return a.startsWith(b + " ") || b.startsWith(a + " "); },
+        (c, m) => !c.enName && normNum(m.number) === normNum(c.localId)
+      ];
+      for(const ok of passes) for(const card of cards){
+        if(out[card.id]) continue;
+        const i = pool.findIndex(m => ok(card, m));
+        if(i >= 0){ const m = pool.splice(i, 1)[0]; out[card.id] = {s:m.images.small, l:m.images.large || m.images.small}; }
+      }
+    }
+    LS.set(`pk.alt.${setId}`, {t:Date.now(), d:out});
+    return out;
+  })().catch(() => { delete altCache[setId]; return {}; });
+}
+function ensureAlt(src){
+  if(!current) return Promise.resolve({});
+  return altImages(src, current.cards.filter(c => c.src === src), current.srcNames?.[src]);
+}
+function useAlt(c, a){
+  c.alt = a;
+  if(owned[c.id] && ownedMeta[c.id] && !ownedMeta[c.id].alt){ ownedMeta[c.id].alt = a; LS.set("pk.ownedMeta", ownedMeta); }
+}
+// Après l'ouverture d'une extension : complète les cartes qui n'ont pas d'image
+async function fillAltImages(set){
+  const srcs = [...new Set(set.cards.filter(c => !c.image && !c.alt).map(c => c.src))];
+  for(const src of srcs){
+    const map = await altImages(src, set.cards.filter(c => c.src === src), set.srcNames?.[src]);
+    if(current !== set) return;
+    set.cards.forEach(c => { if(c.src === src && !c.image && !c.alt && map[c.id]){ useAlt(c, map[c.id]); refreshCardEl(c.id); } });
+  }
+}
+
+// Rééditions vendues dans les mêmes boosters : affichées avec l'extension principale
+const COMPANIONS = {"30th":"30th-c", "cel25":"cel25cc"};
+// Charge une extension, complétée avec la base anglaise (cartes absentes, images manquantes,
+// voire extension entière absente). Chaque carte retient son extension d'origine (src) et son nom anglais.
+async function loadSet(id){
+  let set = null, en = null;
+  try{ set = await getJSON(`/${lang}/sets/${encodeURIComponent(id)}`, `pk.set.${lang}.${id}`, 2*DAY); }
+  catch(e){ if(lang === "en") throw e; }
+  if(lang !== "en"){
+    try{ en = await getJSON(`/en/sets/${encodeURIComponent(id)}`, `pk.set.en.${id}`, 2*DAY); }
+    catch(e){ if(!set) throw e; }
+    if(!set) set = {...en, cards:en.cards.map(c => ({...c, en:true}))};
+    else if(en){
+      const m = Object.fromEntries(en.cards.map(c => [c.id, c]));
+      set.cards.forEach(c => { if(!c.image && m[c.id]?.image) c.image = m[c.id].image; });
+      const have = new Set(set.cards.map(c => c.id));
+      const extra = en.cards.filter(c => !have.has(c.id)).map(c => ({...c, en:true}));
+      if(extra.length) set.cards = set.cards.concat(extra);
+      if((en.cardCount?.total || 0) > (set.cardCount?.total || 0)) set.cardCount = en.cardCount;
+    }
+  }
+  const enNames = en ? Object.fromEntries(en.cards.map(c => [c.id, c.name])) : {};
+  set.cards.forEach(c => { c.src = set.id; c.enName = lang === "en" ? c.name : enNames[c.id] || null; });
+  set.enName = lang === "en" ? set.name : en?.name || null;
+  LS.set(`pk.setids.${set.id}`, set.cards.map(c => c.id));
+  return set;
+}
 async function openSet(id){
   const main = $("#main");
   main.innerHTML = `<div class="loader"><span class="spin"></span>Chargement de l'extension…</div>`;
   try{
-    let set = null;
-    try{ set = await getJSON(`/${lang}/sets/${encodeURIComponent(id)}`, `pk.set.${lang}.${id}`, 2*DAY); }
-    catch(e){ if(lang === "en") throw e; }
-    // La base française est incomplète : on complète avec l'anglais (cartes absentes, images manquantes,
-    // voire extension entière absente)
-    if(lang !== "en"){
-      let en = null;
-      try{ en = await getJSON(`/en/sets/${encodeURIComponent(id)}`, `pk.set.en.${id}`, 2*DAY); }
-      catch(e){ if(!set) throw e; }
-      if(!set) set = {...en, cards:en.cards.map(c => ({...c, en:true}))};
-      else if(en){
-        const m = Object.fromEntries(en.cards.map(c => [c.id, c]));
-        set.cards.forEach(c => { if(!c.image && m[c.id]?.image) c.image = m[c.id].image; });
-        const have = new Set(set.cards.map(c => c.id));
-        const extra = en.cards.filter(c => !have.has(c.id)).map(c => ({...c, en:true}));
-        if(extra.length) set.cards = set.cards.concat(extra);
-        if((en.cardCount?.total || 0) > (set.cardCount?.total || 0)) set.cardCount = en.cardCount;
-      }
+    const set = await loadSet(id);
+    set.srcNames = {[set.id]:set.enName};
+    if(COMPANIONS[id]){
+      try{
+        const cc = await loadSet(COMPANIONS[id]);
+        set.companion = {id:cc.id, name:cc.name, n:cc.cards.length};
+        set.srcNames[cc.id] = cc.enName;
+        cc.cards.forEach(c => { c.cc = true; c.setName = cc.name; c.of = cc.cardCount?.official || cc.cards.length; });
+        set.cards = set.cards.concat(cc.cards);
+      }catch(e){}
     }
-    LS.set(`pk.setids.${set.id}`, set.cards.map(c => c.id));
     current = set; view = "set";
     let metaChanged = false;
     set.cards.forEach(c => { if(owned[c.id] && (!ownedMeta[c.id] || !ownedMeta[c.id].setId)){ ownedMeta[c.id] = metaFrom(c, set); metaChanged = true; } });
@@ -577,6 +676,7 @@ async function openSet(id){
     renderSide();
     window.scrollTo({top:0});
     autoPriceOwned(set);
+    fillAltImages(set);
   }catch(e){
     main.innerHTML = `<div class="error">Impossible de charger cette extension (${esc(e.message)}).</div>`;
   }
@@ -602,7 +702,7 @@ function renderSet(){
       ${s.logo ? `<img class="logo" src="${esc(s.logo)}.webp" alt="${esc(s.name)}" onerror="this.remove()">` : ""}
       <div style="min-width:0">
         <h1>${esc(s.name)}</h1>
-        <div class="sub">${esc(s.serie?.name || "")}${date ? " · sortie le " + esc(date) : ""} · ${esc(s.cardCount?.official ?? st.total)} cartes officielles${s.cardCount?.total > s.cardCount?.official ? " + " + (s.cardCount.total - s.cardCount.official) + (s.cardCount.total - s.cardCount.official > 1 ? " secrètes" : " secrète") : ""}</div>
+        <div class="sub">${esc(s.serie?.name || "")}${date ? " · sortie le " + esc(date) : ""} · ${esc(s.cardCount?.official ?? st.total)} cartes officielles${s.cardCount?.total > s.cardCount?.official ? " + " + (s.cardCount.total - s.cardCount.official) + (s.cardCount.total - s.cardCount.official > 1 ? " secrètes" : " secrète") : ""}${s.companion ? ` + ${s.companion.n} rééditions` : ""}</div>
       </div>
       <div class="kpis">
         <div class="kpi"><b id="kOwned">${st.n}/${st.total}</b><span>possédées</span></div>
@@ -645,7 +745,7 @@ function visibleCards(){
   if(sortBy === "num") list.sort((a,b) => numKey(a) - numKey(b) || String(a.localId).localeCompare(String(b.localId)));
   if(sortBy === "name") list.sort((a,b) => a.name.localeCompare(b.name, "fr"));
   if(sortBy === "price") list.sort((a,b) => (refPrice(b.id) ?? -1) - (refPrice(a.id) ?? -1));
-  return list;
+  return list.filter(c => !c.cc).concat(list.filter(c => c.cc));
 }
 
 function priceHTML(id){
@@ -668,10 +768,11 @@ function tagsHTML(id){
   return tags.length ? `<span class="tags">${tags.join("")}</span>` : "";
 }
 // Image de vignette : petite version sur écran standard, version HD sur écran haute densité (téléphone, Retina)
-function thumbHTML(base, alt){
-  if(!base) return "";
-  const b = esc(base);
-  return `<img src="${b}/low.webp" srcset="${b}/low.webp 245w, ${b}/high.webp 600w" sizes="(max-width:860px) 46vw, 200px" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="imgFail(this)">`;
+function thumbHTML(base, name, id, alt){
+  const attrs = `sizes="(max-width:860px) 46vw, 200px" alt="${esc(name)}" loading="lazy" decoding="async" data-card="${esc(id || "")}" onerror="imgFail(this)"`;
+  if(base){ const b = esc(base); return `<img src="${b}/low.webp" srcset="${b}/low.webp 245w, ${b}/high.webp 600w" ${attrs}>`; }
+  if(alt) return `<img src="${esc(alt.s)}" srcset="${esc(alt.s)} 245w, ${esc(alt.l)} 734w" ${attrs}>`;
+  return "";
 }
 // Image introuvable : on essaie la version anglaise, sinon on laisse place à la carte de remplacement
 function imgFail(el){
@@ -679,16 +780,32 @@ function imgFail(el){
     el.dataset.f = 1;
     if(el.srcset) el.srcset = el.srcset.split(`/${lang}/`).join("/en/");
     el.src = el.src.replace(`/${lang}/`, "/en/");
-  } else el.remove();
+    return;
+  }
+  const c = !el.dataset.alt && current?.cards.find(x => x.id === el.dataset.card);
+  if(!c){
+    const a = !el.dataset.alt && ownedMeta[el.dataset.card]?.alt;   // vue « À échanger »
+    if(a){ el.dataset.alt = 1; el.removeAttribute("srcset"); el.src = el.dataset.big ? a.l : a.s; } else el.remove();
+    return;
+  }
+  el.dataset.alt = 1;
+  (c.alt ? Promise.resolve({[c.id]:c.alt}) : ensureAlt(c.src)).then(map => {
+    const a = map[c.id];
+    if(!a){ el.remove(); return; }
+    useAlt(c, a);
+    el.removeAttribute("srcset");
+    if(el.dataset.big) el.src = a.l;
+    else { el.srcset = `${a.s} 245w, ${a.l} 734w`; el.src = a.s; }
+  });
 }
 function placeholderHTML(name, num){
   return `<span class="noimg" aria-hidden="true"><span class="ph-ball"></span><span class="ph-name">${esc(name)}</span>${num ? `<span class="ph-num">n° ${esc(num)}</span>` : ""}<span class="ph-note">image pas encore disponible</span></span>`;
 }
 function cardHTML(c){
-  const total = current.cardCount?.official || current.cards.length;
+  const total = c.of || current.cardCount?.official || current.cards.length;
   return `<article class="card${owned[c.id] ? " owned" : ""}" data-id="${esc(c.id)}">
     <button type="button" class="pic" data-open="${esc(c.id)}" aria-label="Voir ${esc(c.name)} en grand">
-      ${placeholderHTML(c.name, c.localId)}${thumbHTML(c.image, c.name)}<span class="glare"></span><span class="sheen"></span>${c.en ? `<span class="lang-badge" title="Carte absente de la base française : nom et image en anglais">EN</span>` : ""}<span class="badge-owned">✓</span>${tagsHTML(c.id)}
+      ${placeholderHTML(c.name, c.localId)}${thumbHTML(c.image, c.name, c.id, c.alt)}<span class="glare"></span><span class="sheen"></span>${c.en ? `<span class="lang-badge" title="Carte absente de la base française : nom et image en anglais">EN</span>` : ""}<span class="badge-owned">✓</span>${tagsHTML(c.id)}
     </button>
     <div class="cinfo"><span class="cname" title="${esc(c.name)}">${esc(c.name)}</span><span class="cnum">${esc(c.localId)}/${esc(total)}</span></div>
     <div class="crow">
@@ -701,7 +818,8 @@ function cardHTML(c){
 function renderGrid(){
   const list = visibleCards();
   const g = $("#grid");
-  g.innerHTML = list.length ? list.map(cardHTML).join("") :
+  const firstCC = list.find(c => c.cc);
+  g.innerHTML = list.length ? list.map(c => (c === firstCC ? `<h2 class="grid-sec"><span>Rééditions · ${esc(c.setName)}</span><small>${esc(current.companion?.n || "")} cartes classiques réimprimées pour l'occasion</small></h2>` : "") + cardHTML(c)).join("") :
     `<div class="empty" style="grid-column:1/-1">${filter === "owned" ? "Tu n'as encore coché aucune carte de cette extension." : filter === "missing" ? "Bravo, l'extension est complète !" : filter === "trade" ? "Aucune carte de cette extension n'est marquée à échanger. Touche une carte pour indiquer combien tu en as et combien tu veux échanger." : "Aucune carte ne correspond."}</div>`;
 }
 
@@ -822,7 +940,7 @@ function renderTrades(){
     groups[k].sort((a, b) => numKey(a) - numKey(b)).forEach(id => {
       const m = ownedMeta[id] || {}, cd = items[id]?.c;
       html += `<article class="card owned tradecard" data-id="${esc(id)}">
-        <button type="button" class="pic" data-open="${esc(id)}" aria-label="Voir ${esc(m.name || id)}">${placeholderHTML(m.name || id, m.n)}${thumbHTML(m.img, m.name || id)}<span class="glare"></span><span class="sheen"></span>${tagsHTML(id)}</button>
+        <button type="button" class="pic" data-open="${esc(id)}" aria-label="Voir ${esc(m.name || id)}">${placeholderHTML(m.name || id, m.n)}${thumbHTML(m.img, m.name || id, id, m.alt)}<span class="glare"></span><span class="sheen"></span>${tagsHTML(id)}</button>
         <div class="cinfo"><span class="cname" title="${esc(m.name || id)}">${esc(m.name || id)}</span><span class="cnum">n° ${esc(m.n || "")}</span></div>
         <div class="crow"><span class="pslot">${priceHTML(id)}</span><span class="cond">${esc(cd ? CONDS_SHORT[cd] : "état ?")}</span></div>
       </article>`;
@@ -866,7 +984,7 @@ async function openCard(id){
   const dlg = $("#dlg");
   const m = ownedMeta[id] || {};
   const c = current?.cards.find(x => x.id === id) || {id, name:m.name || id, localId:m.n || id.slice(id.lastIndexOf("-") + 1), image:m.img};
-  const setName = current?.cards.some(x => x.id === id) ? current.name : (m.set || idSet(id));
+  const setName = current?.cards.some(x => x.id === id) ? (c.setName || current.name) : (m.set || idSet(id));
   dlg.innerHTML = `<div class="loader"><span class="spin"></span>Chargement de la carte…</div>`;
   if(!dlg.open) dlg.showModal();
   let card = null;
@@ -876,7 +994,7 @@ async function openCard(id){
     refreshCardPrice(id); refreshKpis(); updateGlobal();
   }catch(e){ card = {...c}; }
   const p = prices[id] || {};
-  const img = card.image || c.image;
+  const img = card.image || c.image, altImg = c.alt || m.alt;
   const cm = p.cm, tp = p.tp;
   const row = (label, v, f = fmtEur) => v != null ? `<tr><th>${label}</th><td>${f(v)}</td></tr>` : "";
   const tpNames = {"normal":"Normale","holofoil":"Holo","reverse-holofoil":"Reverse holo","1st-edition":"1ère édition","1st-edition-holofoil":"1ère édition holo","unlimited":"Unlimited","unlimited-holofoil":"Unlimited holo"};
@@ -885,7 +1003,7 @@ async function openCard(id){
   const dateF = d => d ? new Date(d).toLocaleDateString("fr-FR") : "";
   dlg.innerHTML = `<button type="button" class="close" aria-label="Fermer">×</button>
     <div class="dlg">
-      <div><div class="holo"><div class="holo-card">${placeholderHTML(card.name || c.name, c.localId)}${img ? `<img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" onerror="imgFail(this)">` : ""}<span class="glare"></span><span class="sheen"></span></div></div>${REDUCED ? "" : `<div class="holo-hint">${FINE ? "Survole" : "Fais glisser ton doigt sur"} la carte pour la faire scintiller ✨</div>`}</div>
+      <div><div class="holo"><div class="holo-card">${placeholderHTML(card.name || c.name, c.localId)}${img ? `<img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" data-card="${esc(id)}" data-big="1" onerror="imgFail(this)">` : altImg ? `<img src="${esc(altImg.l)}" alt="${esc(card.name || c.name)}" data-card="${esc(id)}" data-big="1" data-alt="1" onerror="this.remove()">` : ""}<span class="glare"></span><span class="sheen"></span></div></div>${REDUCED ? "" : `<div class="holo-hint">${FINE ? "Survole" : "Fais glisser ton doigt sur"} la carte pour la faire scintiller ✨</div>`}</div>
       <div style="min-width:0">
         <h2>${esc(card.name || c.name)}</h2>
         <div class="sub">${esc(setName)} · n° ${esc(c.localId)}${card.rarity ? " · " + esc(card.rarity) : ""}${card.illustrator ? " · illustration " + esc(card.illustrator) : ""}</div>
