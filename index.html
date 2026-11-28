@@ -116,16 +116,37 @@ main{padding:20px max(16px,env(safe-area-inset-right)) 60px max(16px,env(safe-ar
   transform:perspective(680px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transform-style:preserve-3d;
   transition:transform .35s cubic-bezier(.2,.75,.25,1),box-shadow .35s}
 .pic.tilting{transition:transform .07s linear;box-shadow:0 10px 24px rgba(24,32,58,.28);will-change:transform;z-index:1}
-.pic img{width:100%;height:100%;object-fit:cover;display:block;transition:filter .2s,opacity .2s}
-.card:not(.owned) .pic img{filter:grayscale(1);opacity:.45}
-.card:not(.owned):hover .pic img{opacity:.8;filter:grayscale(.3)}
+.pic img{position:relative;width:100%;height:100%;object-fit:cover;display:block;transition:filter .25s,opacity .25s}
+/* Carte manquante : couleurs atténuées (et non plus grisée), pleine couleur au survol */
+.card:not(.owned) .pic img,.card:not(.owned) .pic .noimg{filter:saturate(.3) contrast(.92);opacity:.6}
+.card:not(.owned):hover .pic img,.card:not(.owned):hover .pic .noimg{filter:none;opacity:1}
+/* Carte possédée : bien visible dans le classeur */
+.card.owned{border-color:color-mix(in srgb,var(--ok) 55%,var(--line));box-shadow:0 0 0 1px color-mix(in srgb,var(--ok) 25%,transparent)}
+.card.owned .pic{box-shadow:0 2px 6px rgba(0,0,0,.22)}
+/* Petit effet quand on coche « Je l'ai » */
+.card.just-owned{animation:ownpop .5s cubic-bezier(.2,.75,.25,1.4)}
+@keyframes ownpop{0%,100%{transform:scale(1)}40%{transform:scale(1.05)}}
+.card.just-owned .pic::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
+  background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.8) 50%,transparent 70%);transform:translateX(-110%);animation:shine .8s .1s ease-out forwards}
+@keyframes shine{to{transform:translateX(110%)}}
+.lang-badge{position:absolute;top:6px;left:6px;background:rgba(18,26,74,.85);color:#fff;border-radius:5px;padding:0 5px;font:700 10px/1.6 var(--f-mono);letter-spacing:.04em}
+.en-tag{font:700 9px/1 var(--f-mono);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 3px;margin-left:4px;vertical-align:1px}
 /* Reflet + voile holographique révélés au survol (pointeur fin uniquement) */
 .pic .glare,.pic .sheen{position:absolute;inset:0;pointer-events:none;border-radius:inherit;opacity:0;transition:opacity .35s}
 .pic .glare{background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.55),rgba(255,255,255,0) 55%);mix-blend-mode:soft-light;opacity:var(--holo,0)}
 .pic .sheen{background:repeating-linear-gradient(112deg,rgba(255,0,132,.5),rgba(255,176,0,.5) 14%,rgba(68,255,110,.5) 28%,rgba(0,198,255,.5) 42%,rgba(150,60,255,.5) 56%,rgba(255,0,132,.5) 70%);
   background-size:280% 280%;background-position:var(--mx,50%) var(--my,50%);mix-blend-mode:color-dodge;opacity:calc(var(--holo,0)*.38)}
-.pic .noimg{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center;padding:10px}
-.pic:has(img) .noimg{display:none}
+/* Carte de remplacement quand l'image n'existe pas (encore) dans la base */
+.noimg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:12px;text-align:center;
+  border-radius:inherit;color:#fff;background:radial-gradient(130% 90% at 50% 0%,#3b5ee0 0%,#1f2f86 55%,#121a4a 100%);
+  box-shadow:inset 0 0 0 5px #f2c230,inset 0 0 0 8px #121a4a;transition:filter .25s,opacity .25s}
+.ph-ball{width:40%;aspect-ratio:1;border-radius:50%;position:relative;margin-bottom:6px;
+  background:linear-gradient(#e3350d 0 44%,#121a4a 44% 56%,#f4f6ff 56%);box-shadow:0 0 0 3px #121a4a,0 0 0 5px rgba(255,255,255,.55)}
+.ph-ball::after{content:"";position:absolute;inset:34%;border-radius:50%;background:#f4f6ff;box-shadow:0 0 0 3px #121a4a}
+.ph-name{font:700 13px/1.2 var(--f-display);text-wrap:balance}
+.ph-num{font:500 11px var(--f-mono);opacity:.8}
+.ph-note{font-size:10px;opacity:.65;line-height:1.3}
+.pic:has(img) .noimg,.holo-card:has(img) .noimg{display:none}
 .badge-owned{position:absolute;top:6px;right:6px;background:var(--ok);color:#fff;border-radius:50%;width:24px;height:24px;
   display:grid;place-items:center;font-weight:700;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .card:not(.owned) .badge-owned{display:none}
@@ -193,11 +214,16 @@ dialog[open]{animation:dlgpop .28s cubic-bezier(.2,.75,.25,1)}
 .holo-card .glare{background:radial-gradient(circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.7),rgba(255,255,255,0) 55%);mix-blend-mode:soft-light;opacity:var(--holo,0)}
 .holo-card .sheen{background:repeating-linear-gradient(112deg,rgba(255,0,132,.55),rgba(255,176,0,.55) 13%,rgba(68,255,110,.55) 26%,rgba(0,198,255,.55) 39%,rgba(150,60,255,.55) 52%,rgba(255,0,132,.55) 65%);
   background-size:280% 280%;background-position:var(--mx,50%) var(--my,50%);mix-blend-mode:color-dodge;opacity:calc(var(--holo,0)*.45)}
-.holo-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:10px}
-/* Sur écran tactile : scintillement doux automatique, pas d'inclinaison */
+.holo-card:not(:has(img)){aspect-ratio:63/88}
+.holo-card .noimg .ph-name{font-size:20px}
+.holo-card .noimg .ph-num{font-size:13px}
+.holo-card .noimg .ph-note{font-size:12px}
+.holo-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:16px}
+/* Sur écran tactile : scintillement doux automatique, et la carte penche quand on glisse le doigt dessus */
 @media (hover:none){
+  .holo{touch-action:none}
   .holo-card .sheen{opacity:.28;animation:holoshift 7s ease-in-out infinite}
-  .holo-hint{display:none}
+  .holo-card.tilting .sheen{animation:none;opacity:.5}
 }
 @keyframes holoshift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
 
@@ -212,12 +238,37 @@ dialog[open]{animation:dlgpop .28s cubic-bezier(.2,.75,.25,1)}
     transition:transform .2s;box-shadow:var(--shadow);padding-top:calc(12px + env(safe-area-inset-top))}
   body.drawer aside.side{transform:none}
   body.drawer::after{content:"";position:fixed;inset:0;background:rgba(10,14,28,.5);z-index:35}
-  .gstats{order:3;margin-left:0;width:100%}
-  .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
-  .dlg{grid-template-columns:minmax(0,1fr)}
+  /* En-tête compact : logo + menu, puis les totaux, puis les réglages sur une ligne qui défile */
+  header.top{gap:8px 12px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:8px}
+  .menu-btn{padding:5px 10px}
+  .brand{font-size:17px;gap:8px}
+  .brand .ball{width:22px;height:22px}
+  .gstats{order:2;margin-left:0;width:100%;gap:8px 14px;align-items:center}
+  .gstat b{font-size:14px}
+  .gstat span{font-size:10px;letter-spacing:.03em;white-space:nowrap}
+  #tradeBtn{margin-left:auto}
+  .tools{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .tools::-webkit-scrollbar{display:none}
+  .tools .btn{padding:5px 10px;font-size:13px;flex:none}
+  main{padding-top:12px}
+  .sethead{padding:12px 14px;gap:8px 14px;border-radius:12px}
+  .sethead img.logo{height:38px;max-width:110px}
+  .sethead h1{font-size:20px}
+  .sethead .sub{font-size:12px}
+  .kpis{margin-left:0;width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .kpi b{font-size:15px}
+  .kpi span{font-size:9.5px;line-height:1.25;display:block}
+  .filters{gap:8px;margin:12px 0}
+  .seg{width:100%;overflow-x:auto;scrollbar-width:none}
+  .seg button{flex:1 0 auto;padding:6px 10px}
+  .filters input[type=search]{max-width:none;flex:1 1 0;min-width:0}
+  .filters .btn{padding:6px 10px;font-size:13px}
+  .filters #sort{flex:none;max-width:46%}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+  .card{padding:6px;gap:6px}
+  .dlg{grid-template-columns:minmax(0,1fr);padding:16px}
   .dlg img{max-width:300px;margin:0 auto}
   .dlg .holo{max-width:300px;margin:0 auto}
-  .kpis{margin-left:0}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -369,9 +420,14 @@ async function priceFromCard(card, id){
   savePricesSoon();
   return prices[id];
 }
+// Fiche d'une carte dans la langue choisie, sinon en anglais (cartes absentes de la base française)
+async function getCard(id){
+  try{ return await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`); }
+  catch(e){ if(lang === "en") throw e; return getJSON(`/en/cards/${encodeURIComponent(id)}`); }
+}
 async function fetchPrice(id, force){
   if(!force && priceFresh(id)) return prices[id];
-  const card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
+  const card = await getCard(id);
   return priceFromCard(card, id);
 }
 // File d'attente : charge les prix de plusieurs cartes, 6 à la fois
@@ -391,15 +447,43 @@ async function priceQueue(ids, force, onEach){
 let _ps; function savePricesSoon(){ clearTimeout(_ps); _ps = setTimeout(() => LS.set("pk.prices", prices), 400); }
 
 /* ================= Barre latérale ================= */
+// Séries d'une langue, dans l'ordre chronologique (TCG Pocket exclu)
+async function seriesFor(l){
+  const list = await getJSON(`/${l}/series`, `pk.series.${l}`, 3*DAY);
+  const details = await Promise.all(list.filter(s => s.id !== "tcgp").map(s =>
+    getJSON(`/${l}/series/${encodeURIComponent(s.id)}`, `pk.serie.${l}.${s.id}`, 3*DAY).catch(() => null)));
+  return details.filter(Boolean).filter(s => s.sets && s.sets.length);
+}
+// Ajoute à `base` les éléments de `extra` qu'il n'a pas, chacun placé juste après son voisin dans `extra`
+function mergeOrdered(base, extra, mark, skip){
+  const out = base.slice(), have = new Set([...base.map(x => x.id), ...(skip || [])]);
+  extra.forEach((x, i) => {
+    if(have.has(x.id)) return;
+    let at = 0;
+    for(let k = i - 1; k >= 0; k--){ const j = out.findIndex(o => o.id === extra[k].id); if(j >= 0){ at = j + 1; break; } }
+    out.splice(at, 0, mark(x)); have.add(x.id);
+  });
+  return out;
+}
 async function loadSeries(){
   const box = $("#series");
+  const askedLang = lang;
   try{
-    const list = await getJSON(`/${lang}/series`, `pk.series.${lang}`, 3*DAY);
-    const details = await Promise.all(list.filter(s => s.id !== "tcgp").map(s =>
-      getJSON(`/${lang}/series/${encodeURIComponent(s.id)}`, `pk.serie.${lang}.${s.id}`, 3*DAY).catch(() => null)));
-    seriesData = details.filter(Boolean).filter(s => s.sets && s.sets.length).reverse();
+    const mine = await seriesFor(lang);
+    seriesData = mine.slice().reverse();
     renderSide();
     route();
+    if(lang === "en") return;
+    // La base française est incomplète : on ajoute les extensions qui n'existent qu'en anglais
+    const en = await seriesFor("en").catch(() => null);
+    if(!en || lang !== askedLang) return;
+    const known = new Set(mine.flatMap(s => s.sets.map(x => x.id)));
+    const enById = Object.fromEntries(en.map(s => [s.id, s]));
+    const markSet = x => ({...x, en:true});
+    let merged = mine.map(s => enById[s.id] ? {...s, sets:mergeOrdered(s.sets, enById[s.id].sets, markSet, known)} : s);
+    merged = mergeOrdered(merged, en, s => ({...s, sets:s.sets.filter(x => !known.has(x.id)).map(markSet)}));
+    seriesData = merged.filter(s => s.sets.length).reverse();
+    renderSide();
   }catch(e){
     box.innerHTML = `<div class="error">Impossible de charger les collections (${esc(e.message)}).<br>Vérifie ta connexion internet puis recharge la page.</div>`;
   }
@@ -428,7 +512,7 @@ function renderSide(){
       const pct = total ? Math.min(100, n / total * 100) : 0;
       html += `<button type="button" class="setlink${current && current.id === st.id ? " active" : ""}" data-set="${esc(st.id)}">
         ${st.logo ? `<img src="${esc(st.logo)}.webp" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span></span>`}
-        <span style="min-width:0"><div class="nm">${esc(st.name)}</div>
+        <span style="min-width:0"><div class="nm" ${st.en ? `title="Extension absente de la base française : affichée en anglais"` : ""}>${esc(st.name)}${st.en ? `<span class="en-tag">EN</span>` : ""}</div>
         <div class="meta"><span>${n}/${total}</span><span class="bar${total && n >= total ? " done" : ""}"><i style="width:${pct}%"></i></span></div></span>
       </button>`;
     }
@@ -465,14 +549,24 @@ async function openSet(id){
   const main = $("#main");
   main.innerHTML = `<div class="loader"><span class="spin"></span>Chargement de l'extension…</div>`;
   try{
-    const set = await getJSON(`/${lang}/sets/${encodeURIComponent(id)}`, `pk.set.${lang}.${id}`, 2*DAY);
-    // Certaines cartes n'ont pas d'image dans la langue choisie : on complète avec l'anglais
-    if(lang !== "en" && set.cards.some(c => !c.image)){
-      try{
-        const en = await getJSON(`/en/sets/${encodeURIComponent(id)}`, `pk.set.en.${id}`, 2*DAY);
+    let set = null;
+    try{ set = await getJSON(`/${lang}/sets/${encodeURIComponent(id)}`, `pk.set.${lang}.${id}`, 2*DAY); }
+    catch(e){ if(lang === "en") throw e; }
+    // La base française est incomplète : on complète avec l'anglais (cartes absentes, images manquantes,
+    // voire extension entière absente)
+    if(lang !== "en"){
+      let en = null;
+      try{ en = await getJSON(`/en/sets/${encodeURIComponent(id)}`, `pk.set.en.${id}`, 2*DAY); }
+      catch(e){ if(!set) throw e; }
+      if(!set) set = {...en, cards:en.cards.map(c => ({...c, en:true}))};
+      else if(en){
         const m = Object.fromEntries(en.cards.map(c => [c.id, c]));
         set.cards.forEach(c => { if(!c.image && m[c.id]?.image) c.image = m[c.id].image; });
-      }catch(e){}
+        const have = new Set(set.cards.map(c => c.id));
+        const extra = en.cards.filter(c => !have.has(c.id)).map(c => ({...c, en:true}));
+        if(extra.length) set.cards = set.cards.concat(extra);
+        if((en.cardCount?.total || 0) > (set.cardCount?.total || 0)) set.cardCount = en.cardCount;
+      }
     }
     LS.set(`pk.setids.${set.id}`, set.cards.map(c => c.id));
     current = set; view = "set";
@@ -508,7 +602,7 @@ function renderSet(){
       ${s.logo ? `<img class="logo" src="${esc(s.logo)}.webp" alt="${esc(s.name)}" onerror="this.remove()">` : ""}
       <div style="min-width:0">
         <h1>${esc(s.name)}</h1>
-        <div class="sub">${esc(s.serie?.name || "")}${date ? " · sortie le " + esc(date) : ""} · ${esc(s.cardCount?.official ?? st.total)} cartes officielles${s.cardCount?.total > s.cardCount?.official ? " + " + (s.cardCount.total - s.cardCount.official) + " secrètes" : ""}</div>
+        <div class="sub">${esc(s.serie?.name || "")}${date ? " · sortie le " + esc(date) : ""} · ${esc(s.cardCount?.official ?? st.total)} cartes officielles${s.cardCount?.total > s.cardCount?.official ? " + " + (s.cardCount.total - s.cardCount.official) + (s.cardCount.total - s.cardCount.official > 1 ? " secrètes" : " secrète") : ""}</div>
       </div>
       <div class="kpis">
         <div class="kpi"><b id="kOwned">${st.n}/${st.total}</b><span>possédées</span></div>
@@ -573,12 +667,28 @@ function tagsHTML(id){
   if(t) tags.push(`<span class="tag trade" title="${t} à échanger">⇄ ${t}</span>`);
   return tags.length ? `<span class="tags">${tags.join("")}</span>` : "";
 }
+// Image de vignette : petite version sur écran standard, version HD sur écran haute densité (téléphone, Retina)
+function thumbHTML(base, alt){
+  if(!base) return "";
+  const b = esc(base);
+  return `<img src="${b}/low.webp" srcset="${b}/low.webp 245w, ${b}/high.webp 600w" sizes="(max-width:860px) 46vw, 200px" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="imgFail(this)">`;
+}
+// Image introuvable : on essaie la version anglaise, sinon on laisse place à la carte de remplacement
+function imgFail(el){
+  if(lang !== "en" && !el.dataset.f && el.src.includes(`/${lang}/`)){
+    el.dataset.f = 1;
+    if(el.srcset) el.srcset = el.srcset.split(`/${lang}/`).join("/en/");
+    el.src = el.src.replace(`/${lang}/`, "/en/");
+  } else el.remove();
+}
+function placeholderHTML(name, num){
+  return `<span class="noimg" aria-hidden="true"><span class="ph-ball"></span><span class="ph-name">${esc(name)}</span>${num ? `<span class="ph-num">n° ${esc(num)}</span>` : ""}<span class="ph-note">image pas encore disponible</span></span>`;
+}
 function cardHTML(c){
   const total = current.cardCount?.official || current.cards.length;
-  const img = c.image ? `<img src="${esc(c.image)}/low.webp" alt="${esc(c.name)}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}else{this.remove()}">` : "";
   return `<article class="card${owned[c.id] ? " owned" : ""}" data-id="${esc(c.id)}">
     <button type="button" class="pic" data-open="${esc(c.id)}" aria-label="Voir ${esc(c.name)} en grand">
-      <span class="noimg">${esc(c.name)}<br>image indisponible</span>${img}<span class="glare"></span><span class="sheen"></span><span class="badge-owned">✓</span>${tagsHTML(c.id)}
+      ${placeholderHTML(c.name, c.localId)}${thumbHTML(c.image, c.name)}<span class="glare"></span><span class="sheen"></span>${c.en ? `<span class="lang-badge" title="Carte absente de la base française : nom et image en anglais">EN</span>` : ""}<span class="badge-owned">✓</span>${tagsHTML(c.id)}
     </button>
     <div class="cinfo"><span class="cname" title="${esc(c.name)}">${esc(c.name)}</span><span class="cnum">${esc(c.localId)}/${esc(total)}</span></div>
     <div class="crow">
@@ -626,6 +736,10 @@ function setOwned(id, val){
   else { delete owned[id]; delete ownedMeta[id]; delete items[id]; LS.set("pk.items", items); }
   LS.set("pk.owned", owned); LS.set("pk.ownedMeta", ownedMeta);
   refreshCardEl(id);
+  if(val){
+    const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if(el){ el.classList.add("just-owned"); setTimeout(() => el.classList.remove("just-owned"), 1000); }
+  }
   refreshKpis(); updateGlobal(); renderSide();
 }
 
@@ -707,9 +821,8 @@ function renderTrades(){
     html += `<div class="tradegroup"><h2>${esc(k)}</h2><div class="grid">`;
     groups[k].sort((a, b) => numKey(a) - numKey(b)).forEach(id => {
       const m = ownedMeta[id] || {}, cd = items[id]?.c;
-      const img = m.img ? `<img src="${esc(m.img)}/low.webp" alt="${esc(m.name || id)}" loading="lazy" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}else{this.remove()}">` : "";
       html += `<article class="card owned tradecard" data-id="${esc(id)}">
-        <button type="button" class="pic" data-open="${esc(id)}" aria-label="Voir ${esc(m.name || id)}"><span class="noimg">${esc(m.name || id)}</span>${img}<span class="glare"></span><span class="sheen"></span>${tagsHTML(id)}</button>
+        <button type="button" class="pic" data-open="${esc(id)}" aria-label="Voir ${esc(m.name || id)}">${placeholderHTML(m.name || id, m.n)}${thumbHTML(m.img, m.name || id)}<span class="glare"></span><span class="sheen"></span>${tagsHTML(id)}</button>
         <div class="cinfo"><span class="cname" title="${esc(m.name || id)}">${esc(m.name || id)}</span><span class="cnum">n° ${esc(m.n || "")}</span></div>
         <div class="crow"><span class="pslot">${priceHTML(id)}</span><span class="cond">${esc(cd ? CONDS_SHORT[cd] : "état ?")}</span></div>
       </article>`;
@@ -758,7 +871,7 @@ async function openCard(id){
   if(!dlg.open) dlg.showModal();
   let card = null;
   try{
-    card = await getJSON(`/${lang}/cards/${encodeURIComponent(id)}`);
+    card = await getCard(id);
     await priceFromCard(card, id);
     refreshCardPrice(id); refreshKpis(); updateGlobal();
   }catch(e){ card = {...c}; }
@@ -772,7 +885,7 @@ async function openCard(id){
   const dateF = d => d ? new Date(d).toLocaleDateString("fr-FR") : "";
   dlg.innerHTML = `<button type="button" class="close" aria-label="Fermer">×</button>
     <div class="dlg">
-      <div>${img ? `<div class="holo"><div class="holo-card"><img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=this.src.replace('/${lang}/','/en/')}"><span class="glare"></span><span class="sheen"></span></div></div>${FINE && !REDUCED ? `<div class="holo-hint">Survole la carte pour la faire scintiller ✨</div>` : ""}` : `<div class="empty">Image indisponible</div>`}</div>
+      <div><div class="holo"><div class="holo-card">${placeholderHTML(card.name || c.name, c.localId)}${img ? `<img src="${esc(img)}/high.webp" alt="${esc(card.name || c.name)}" onerror="imgFail(this)">` : ""}<span class="glare"></span><span class="sheen"></span></div></div>${REDUCED ? "" : `<div class="holo-hint">${FINE ? "Survole" : "Fais glisser ton doigt sur"} la carte pour la faire scintiller ✨</div>`}</div>
       <div style="min-width:0">
         <h2>${esc(card.name || c.name)}</h2>
         <div class="sub">${esc(setName)} · n° ${esc(c.localId)}${card.rarity ? " · " + esc(card.rarity) : ""}${card.illustrator ? " · illustration " + esc(card.illustrator) : ""}</div>
@@ -807,10 +920,14 @@ async function openCard(id){
     </div>`;
   dlg.querySelector(".close").onclick = () => dlg.close();
   const holoCard = dlg.querySelector(".holo-card");
-  if(holoCard && FINE && !REDUCED){
+  if(holoCard && !REDUCED){
+    // Souris : la carte suit le pointeur. Tactile : elle penche quand on glisse le doigt dessus.
     const zone = holoCard.parentElement; let rafH = 0, hx = 0, hy = 0;
-    zone.addEventListener("pointermove", e => { hx = e.clientX; hy = e.clientY; if(!rafH) rafH = requestAnimationFrame(() => { rafH = 0; tiltMove(holoCard, hx, hy, 14); }); });
-    zone.addEventListener("pointerleave", () => tiltReset(holoCard));
+    const follow = e => { hx = e.clientX; hy = e.clientY; if(!rafH) rafH = requestAnimationFrame(() => { rafH = 0; tiltMove(holoCard, hx, hy, 14); }); };
+    const release = () => { cancelAnimationFrame(rafH); rafH = 0; tiltReset(holoCard); };
+    zone.addEventListener("pointermove", e => { if(e.pointerType === "mouse" || e.buttons || e.pointerType === "touch") follow(e); });
+    zone.addEventListener("pointerdown", follow);
+    ["pointerleave", "pointerup", "pointercancel"].forEach(t => zone.addEventListener(t, e => { if(t === "pointerleave" || e.pointerType !== "mouse") release(); }));
   }
   const syncMine = () => {
     const box = dlg.querySelector("#mine"); if(!box) return;
